@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Search, ExternalLink, Mail } from "lucide-react";
+import Link from "next/link";
+import { Search, ExternalLink, Mail, Plus } from "lucide-react";
+import { isLoggedIn } from "@/lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -30,6 +32,17 @@ export default function ResearchPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("");
+  const [isProf, setIsProf] = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn()) {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const user = JSON.parse(stored);
+        setIsProf(user.is_professor);
+      }
+    }
+  }, []);
 
   const fetchProfessors = useCallback(async () => {
     setLoading(true);
@@ -56,9 +69,20 @@ export default function ResearchPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Research & Professors</h1>
-        <p className="text-sm text-slate-500">Find professors by research interest and connect</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Research & Professors</h1>
+          <p className="text-sm text-slate-500">Find professors by research interest and connect</p>
+        </div>
+        {isProf && (
+          <Link
+            href="/research/new"
+            className="bg-[#7E3AF2] text-white px-5 py-2.5 rounded-xl font-medium text-sm hover:bg-[#6D28D9] transition-all flex items-center gap-2"
+          >
+            <Plus size={16} />
+            Post Research Project
+          </Link>
+        )}
       </div>
 
       {/* Search + Department filter */}
