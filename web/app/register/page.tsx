@@ -2,7 +2,8 @@
 
 import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UserPlus, Eye, EyeOff, Loader2 } from "lucide-react";
+import { UserPlus, Eye, EyeOff, Loader2, GraduationCap } from "lucide-react";
+import { setAuth } from "@/lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -23,18 +24,30 @@ const PROGRAMS = [
   "Systems Design Engineering",
 ];
 
+const DEPARTMENTS = [
+  "Chemical Engineering",
+  "Civil and Environmental Engineering",
+  "Electrical and Computer Engineering",
+  "Management Sciences",
+  "Mechanical and Mechatronics Engineering",
+  "Systems Design Engineering",
+];
+
 const GRAD_YEARS = Array.from({ length: 8 }, (_, i) => `${2025 + i}`);
 
 function RegisterForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const hasWatcardData = !!searchParams.get("name");
 
+  const [isProf, setIsProf] = useState(false);
   const [form, setForm] = useState({
     name: searchParams.get("name") || "",
     studentId: searchParams.get("studentId") || "",
     email: "",
     gender: "",
     program: "",
+    department: "",
     classOf: "",
     password: "",
     confirmPassword: "",
@@ -70,13 +83,14 @@ function RegisterForm() {
     setError(null);
 
     try {
-      // Map classOf to year (e.g., 2029 grad → currently year 1 in 2025)
-      const currentYear = new Date().getFullYear();
-      const gradYear = parseInt(form.classOf);
-      const yearNum = Math.max(1, Math.min(5, 5 - (gradYear - currentYear)));
-      const year = yearNum <= 5 ? String(yearNum) : "grad";
+      let year = "grad";
+      if (!isProf) {
+        const currentYear = new Date().getFullYear();
+        const gradYear = parseInt(form.classOf);
+        const yearNum = Math.max(1, Math.min(5, 5 - (gradYear - currentYear)));
+        year = yearNum <= 5 ? String(yearNum) : "grad";
+      }
 
-      // 1. Sign up with the backend
       const signupRes = await fetch(`${API_URL}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,7 +98,7 @@ function RegisterForm() {
           email: form.email,
           password: form.password,
           name: form.name,
-          department: form.program,
+          department: isProf ? form.department : form.program,
           year,
         }),
       });
@@ -97,24 +111,25 @@ function RegisterForm() {
       }
 
       const token = signupData.access_token;
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(signupData.user));
+      setAuth(token, signupData.user);
 
-      // 2. Upload WatCard for verification
-      const watcardBase64 = sessionStorage.getItem("watcardImage");
-      if (watcardBase64) {
-        const res = await fetch(watcardBase64);
-        const blob = await res.blob();
-        const formData = new FormData();
-        formData.append("file", blob, "watcard.jpg");
+      // Upload WatCard for verification (students only)
+      if (!isProf) {
+        const watcardBase64 = sessionStorage.getItem("watcardImage");
+        if (watcardBase64) {
+          const res = await fetch(watcardBase64);
+          const blob = await res.blob();
+          const formData = new FormData();
+          formData.append("file", blob, "watcard.jpg");
 
-        await fetch(`${API_URL}/api/auth/verify-watcard`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        });
+          await fetch(`${API_URL}/api/auth/verify-watcard`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
 
-        sessionStorage.removeItem("watcardImage");
+          sessionStorage.removeItem("watcardImage");
+        }
       }
 
       router.push("/");
@@ -126,161 +141,223 @@ function RegisterForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Name (pre-filled, read-only) */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
-        <input
-          type="text"
-          value={form.name}
-          readOnly
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
-        />
-        <p className="text-xs text-slate-400 mt-1">Extracted from your WatCard</p>
-      </div>
-
-      {/* Student ID (pre-filled, read-only) */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Student ID</label>
-        <input
-          type="text"
-          value={form.studentId}
-          readOnly
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
-        />
-        <p className="text-xs text-slate-400 mt-1">Extracted from your WatCard</p>
-      </div>
-
-      {/* Email */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">UWaterloo Email</label>
-        <input
-          type="email"
-          value={form.email}
-          onChange={(e) => update("email", e.target.value)}
-          placeholder="you@uwaterloo.ca"
-          required
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all"
-        />
-      </div>
-
-      {/* Gender */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Gender</label>
-        <select
-          value={form.gender}
-          onChange={(e) => update("gender", e.target.value)}
-          required
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
+    <div className="space-y-8">
+      {/* Role Toggle */}
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => setIsProf(false)}
+          className={`flex-1 py-3 rounded-xl font-medium text-sm border transition-all ${
+            !isProf
+              ? "bg-[#7E3AF2] text-white border-[#7E3AF2]"
+              : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+          }`}
         >
-          <option value="">Select gender</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="non-binary">Non-binary</option>
-          <option value="prefer-not-to-say">Prefer not to say</option>
-        </select>
-      </div>
-
-      {/* Program */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Program</label>
-        <select
-          value={form.program}
-          onChange={(e) => update("program", e.target.value)}
-          required
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
+          Student
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsProf(true)}
+          className={`flex-1 py-3 rounded-xl font-medium text-sm border transition-all flex items-center justify-center gap-2 ${
+            isProf
+              ? "bg-[#7E3AF2] text-white border-[#7E3AF2]"
+              : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+          }`}
         >
-          <option value="">Select program</option>
-          {PROGRAMS.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
+          <GraduationCap className="w-4 h-4" />
+          Professor
+        </button>
       </div>
 
-      {/* Class of */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Class Of</label>
-        <select
-          value={form.classOf}
-          onChange={(e) => update("classOf", e.target.value)}
-          required
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
-        >
-          <option value="">Select graduation year</option>
-          {GRAD_YEARS.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-      </div>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Name */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
+          {!isProf && hasWatcardData ? (
+            <>
+              <input
+                type="text"
+                value={form.name}
+                readOnly
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-400 mt-1">Extracted from your WatCard</p>
+            </>
+          ) : (
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => update("name", e.target.value)}
+              placeholder="Enter your full name"
+              required
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all"
+            />
+          )}
+        </div>
 
-      {/* Password */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
-        <div className="relative">
+        {/* Student ID - students only */}
+        {!isProf && hasWatcardData && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Student ID</label>
+            <input
+              type="text"
+              value={form.studentId}
+              readOnly
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+            />
+            <p className="text-xs text-slate-400 mt-1">Extracted from your WatCard</p>
+          </div>
+        )}
+
+        {/* Email */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">UWaterloo Email</label>
           <input
-            type={showPassword ? "text" : "password"}
-            value={form.password}
-            onChange={(e) => update("password", e.target.value)}
-            placeholder="At least 8 characters"
+            type="email"
+            value={form.email}
+            onChange={(e) => update("email", e.target.value)}
+            placeholder="you@uwaterloo.ca"
             required
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all pr-12"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-          >
-            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-          </button>
         </div>
-      </div>
 
-      {/* Confirm Password */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">Confirm Password</label>
-        <div className="relative">
-          <input
-            type={showConfirm ? "text" : "password"}
-            value={form.confirmPassword}
-            onChange={(e) => update("confirmPassword", e.target.value)}
-            placeholder="Re-enter your password"
+        {/* Gender */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Gender</label>
+          <select
+            value={form.gender}
+            onChange={(e) => update("gender", e.target.value)}
             required
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all pr-12"
-          />
-          <button
-            type="button"
-            onClick={() => setShowConfirm(!showConfirm)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
           >
-            {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-          </button>
+            <option value="">Select gender</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="non-binary">Non-binary</option>
+            <option value="prefer-not-to-say">Prefer not to say</option>
+          </select>
         </div>
-      </div>
 
-      {error && (
-        <div className="rounded-xl p-4 bg-red-50 border border-red-200">
-          <p className="text-red-700 text-sm">{error}</p>
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-[#7E3AF2] text-white py-4 rounded-2xl font-bold text-lg hover:bg-[#6D28D9] transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Creating Account...
-          </>
+        {/* Program (students) or Department (profs) */}
+        {isProf ? (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Department</label>
+            <select
+              value={form.department}
+              onChange={(e) => update("department", e.target.value)}
+              required
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
+            >
+              <option value="">Select department</option>
+              {DEPARTMENTS.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
         ) : (
           <>
-            <UserPlus className="w-5 h-5" />
-            Create Account
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Program</label>
+              <select
+                value={form.program}
+                onChange={(e) => update("program", e.target.value)}
+                required
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
+              >
+                <option value="">Select program</option>
+                {PROGRAMS.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Class Of</label>
+              <select
+                value={form.classOf}
+                onChange={(e) => update("classOf", e.target.value)}
+                required
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white"
+              >
+                <option value="">Select graduation year</option>
+                {GRAD_YEARS.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
           </>
         )}
-      </button>
-    </form>
+
+        {/* Password */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={form.password}
+              onChange={(e) => update("password", e.target.value)}
+              placeholder="At least 8 characters"
+              required
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all pr-12"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Confirm Password */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Confirm Password</label>
+          <div className="relative">
+            <input
+              type={showConfirm ? "text" : "password"}
+              value={form.confirmPassword}
+              onChange={(e) => update("confirmPassword", e.target.value)}
+              placeholder="Re-enter your password"
+              required
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#7E3AF2] focus:ring-2 focus:ring-purple-100 outline-none transition-all pr-12"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirm(!showConfirm)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-xl p-4 bg-red-50 border border-red-200">
+            <p className="text-red-700 text-sm">{error}</p>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-[#7E3AF2] text-white py-4 rounded-2xl font-bold text-lg hover:bg-[#6D28D9] transition-all shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Creating Account...
+            </>
+          ) : (
+            <>
+              <UserPlus className="w-5 h-5" />
+              {isProf ? "Register as Professor" : "Create Account"}
+            </>
+          )}
+        </button>
+      </form>
+    </div>
   );
 }
 

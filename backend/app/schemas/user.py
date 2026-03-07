@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -19,7 +20,7 @@ class UserPublic(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    name: str | None = None
-    department: str | None = None
-    year: str | None = None
-    bio: str | None = None
+    name: Optional[str] = None
+    department: Optional[str] = None
+    year: Optional[str] = None
+    bio: Optional[str] = None

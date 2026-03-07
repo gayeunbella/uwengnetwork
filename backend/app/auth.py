@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -29,7 +30,7 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def _decode_token(credentials: HTTPAuthorizationCredentials | None) -> str | None:
+def _decode_token(credentials: Optional[HTTPAuthorizationCredentials]) -> Optional[str]:
     if not credentials:
         return None
     try:
