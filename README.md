@@ -1,4 +1,4 @@
-[Presentation slides] (https://www.canva.com/design/DAHDTDT7G6c/6WsGtPy9WjzO6hfOQoDHjA/edit?utm_content=DAHDTDT7G6c&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+[Presentation Slides](https://www.canva.com/design/DAHDTDT7G6c/6WsGtPy9WjzO6hfOQoDHjA/edit?utm_content=DAHDTDT7G6c&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
 
 ## Inspiration
 UW engineering students are isolated across departments, co-op terms, and social circles. They work on projects solo with no easy way to find teammates and waste hours on Discord, Instagram, and websites for opportunities such as research or projects, only to face cold email rejections. Meanwhile, professors struggle to discover skilled, interested students that can help with their research.
