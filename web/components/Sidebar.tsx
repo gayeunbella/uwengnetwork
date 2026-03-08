@@ -6,21 +6,49 @@ import { useEffect, useState } from "react";
 import { Compass, FlaskConical, MessageCircle, User, LogOut, LogIn, FolderOpen, GraduationCap, MessagesSquare } from "lucide-react";
 import { clearAuth, isLoggedIn } from "@/lib/auth";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [loggedIn, setLoggedIn] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    setLoggedIn(isLoggedIn());
-    const handler = () => setLoggedIn(isLoggedIn());
-    window.addEventListener("auth-change", handler);
-    return () => window.removeEventListener("auth-change", handler);
+    const update = () => setLoggedIn(isLoggedIn());
+    update();
+    window.addEventListener("auth-change", update);
+    return () => window.removeEventListener("auth-change", update);
   }, []);
+
+  // Poll unread notifications every 30s
+  useEffect(() => {
+    if (!loggedIn) { setUnreadCount(0); return; }
+
+    const fetchUnread = () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      fetch(`${API_URL}/api/notifications?unread=true&page_size=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data) setUnreadCount(data.unread_count ?? 0); })
+        .catch(() => {});
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [loggedIn]);
+
+  // Clear badge when on notifications page
+  useEffect(() => {
+    if (pathname === "/notifications") setUnreadCount(0);
+  }, [pathname]);
 
   const handleSignOut = () => {
     clearAuth();
-    router.push("/");
+    router.push("/landing");
   };
 
   return (
@@ -58,7 +86,15 @@ export default function Sidebar() {
   );
 }
 
-function NavItem({ href, icon, label, active }: { href: string; icon: React.ReactNode; label: string; active: boolean }) {
+function NavItem({
+  href, icon, label, active, badge,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  badge?: number;
+}) {
   return (
     <Link
       href={href}
@@ -68,7 +104,13 @@ function NavItem({ href, icon, label, active }: { href: string; icon: React.Reac
           : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
       }`}
     >
-      {icon} {label}
+      <span className="flex-shrink-0">{icon}</span>
+      <span className="flex-1">{label}</span>
+      {badge !== undefined && (
+        <span className="min-w-[20px] h-5 rounded-full bg-[#7E3AF2] text-white text-xs flex items-center justify-center px-1.5 font-medium">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </Link>
   );
 }
