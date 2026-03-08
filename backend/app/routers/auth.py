@@ -26,6 +26,7 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         name=req.name,
         department=req.department,
         year=req.year,
+        is_professor=req.is_professor or False,
     )
     db.add(user)
     db.commit()

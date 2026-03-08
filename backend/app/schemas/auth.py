@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, field_validator
 
 from app.schemas.user import UserPublic
@@ -9,6 +11,7 @@ class SignupRequest(BaseModel):
     name: str
     department: str
     year: str
+    is_professor: Optional[bool] = False
 
     @field_validator("email")
     @classmethod

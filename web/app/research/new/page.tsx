@@ -266,8 +266,8 @@ export default function NewResearchProjectPage() {
   if (!loggedIn) {
     return (
       <div className="text-center py-20">
-        <p className="text-slate-500 font-medium">Log in to create a research project</p>
-        <Link href="/login" className="text-sm text-[#7E3AF2] font-medium hover:underline mt-2 inline-block">Log In</Link>
+        <p className="text-slate-500 font-medium">Sign in to create a research project</p>
+        <Link href="/login" className="text-sm text-[#7E3AF2] font-medium hover:underline mt-2 inline-block">Sign In</Link>
       </div>
     );
   }
