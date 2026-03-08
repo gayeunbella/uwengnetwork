@@ -1,9 +1,14 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Clock, MessageCircle, ExternalLink, Github } from "lucide-react";
+import {
+  ArrowLeft, Clock, Heart, Github, ExternalLink, Users, Eye,
+  Trash2, Loader2, BookOpen, Calendar, Mail, Pencil,
+  ThumbsUp, MessageSquare, Share2, Check,
+} from "lucide-react";
+import { isLoggedIn } from "@/lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -43,40 +48,42 @@ const DOMAIN_COLORS: Record<string, string> = {
   other: "bg-slate-100 text-slate-600",
 };
 
-type UserPublic = {
+type PostDetail = {
   id: string;
-  name: string;
-  department: string;
-  year: string;
-  profile_picture: string;
-};
-
-type PostPublic = {
-  id: string;
-  author: UserPublic;
   title: string;
   body: string;
-  media: string[];
   project_stage: string;
   category: string;
   tech_stack: string[];
   field: string[];
+  media: string[];
   created_at: string;
-};
-
-type PostAuthorView = PostPublic & {
-  view_count: number;
-  prof_view_count: number;
-  likes: UserPublic[];
+  author: {
+    id: string;
+    name: string;
+    email: string;
+    department: string;
+    year: string;
+    is_professor: boolean;
+    profile_picture: string;
+  };
+  view_count?: number;
+  prof_view_count?: number;
+  likes?: { id: string; name: string; department: string }[];
 };
 
 function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  const diff = Date.now() - date.getTime();
+  if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  const days = Math.floor(hours / 24);
+  if (days <= 10) return `${days}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function parseBody(body: string) {
@@ -92,230 +99,604 @@ function parseBody(body: string) {
   return { description, meta };
 }
 
-export default function PostPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function PostDetailPage() {
+  const { id } = useParams();
   const router = useRouter();
-  const [post, setPost] = useState<PostPublic | PostAuthorView | null>(null);
+  const [post, setPost] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [liked, setLiked] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<{ id: string; user: { id: string; name: string; department: string; year: string; profile_picture: string }; body: string; created_at: string }[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) {
-      try {
-        setCurrentUserId(JSON.parse(stored).id);
-      } catch {}
+    if (isLoggedIn()) {
+      const stored = localStorage.getItem("user");
+      if (stored) setCurrentUserId(JSON.parse(stored).id);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
     const token = localStorage.getItem("token");
-    fetch(`${API_URL}/api/posts/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async (res) => {
-        if (res.status === 404) { setNotFound(true); return; }
-        if (!res.ok) return;
-        setPost(await res.json());
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    fetch(`${API_URL}/api/posts/${id}`, { headers })
+      .then((res) => {
+        if (!res.ok) throw new Error("Post not found");
+        return res.json();
       })
-      .catch(() => {})
+      .then((data) => {
+        setPost(data);
+        if (data.liked_by_me) setLiked(true);
+      })
+      .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
 
-  const handleLike = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) { router.push("/login"); return; }
-    try {
-      const res = await fetch(`${API_URL}/api/posts/${id}/like`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) setLiked((await res.json()).liked);
-    } catch {}
+  const requireAuth = (action: string): boolean => {
+    if (!localStorage.getItem("token")) {
+      setLoginPrompt(action);
+      setTimeout(() => setLoginPrompt(null), 3000);
+      return false;
+    }
+    return true;
   };
 
-  if (loading) return <div className="text-center py-20 text-slate-400">Loading...</div>;
-  if (notFound) return (
-    <div className="text-center py-20">
-      <p className="text-slate-500 font-medium">Post not found</p>
-      <Link href="/" className="text-[#7E3AF2] text-sm font-medium hover:underline mt-2 inline-block">Back to feed</Link>
-    </div>
-  );
-  if (!post) return null;
+  const handleLike = async () => {
+    if (!requireAuth("like this post")) return;
+    if (!post) return;
+    try {
+      const res = await fetch(`${API_URL}/api/posts/${post.id}/like`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLiked(data.liked);
+      }
+    } catch { /* ignore */ }
+  };
 
-  const isAuthor = currentUserId === post.author.id;
-  const authorView = isAuthor ? (post as PostAuthorView) : null;
+  const handleDelete = async () => {
+    if (!post || !confirm("Are you sure you want to delete this post?")) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/posts/${post.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) router.push("/projects");
+    } catch { /* ignore */ }
+    finally { setDeleting(false); }
+  };
+
+  const fetchComments = async () => {
+    if (!id) return;
+    setLoadingComments(true);
+    try {
+      const res = await fetch(`${API_URL}/api/posts/${id}/comments`);
+      if (res.ok) setComments(await res.json());
+    } catch { /* ignore */ }
+    setLoadingComments(false);
+  };
+
+  const toggleComments = () => {
+    if (!showComments) fetchComments();
+    setShowComments(!showComments);
+  };
+
+  const handleComment = async () => {
+    if (!commentText.trim() || !id) return;
+    if (!requireAuth("comment on this post")) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/posts/${id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
+        body: JSON.stringify({ body: commentText.trim() }),
+      });
+      if (res.ok) {
+        const newComment = await res.json();
+        setComments((prev) => [...prev, newComment]);
+        setCommentText("");
+      }
+    } catch { /* ignore */ }
+    setSubmitting(false);
+  };
+
+  const handleShare = async () => {
+    await navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-20">
+        <Loader2 className="w-8 h-8 text-slate-300 mx-auto animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !post) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-slate-500 font-medium">{error || "Post not found"}</p>
+        <Link href="/projects" className="text-sm text-[#5D0096] font-medium hover:underline mt-2 inline-block">
+          Back to Projects
+        </Link>
+      </div>
+    );
+  }
+
   const { description, meta } = parseBody(post.body);
+  const githubUrl = meta["GitHub"];
+  const demoUrl = meta["Demo"];
+  const lookingFor = meta["Looking for"];
+  const timeline = meta["Timeline"];
+  const projectType = meta["Type"];
+  const isOwner = currentUserId === post.author.id;
+
+  // Research project fields
+  const lab = meta["Lab"];
+  const course = meta["Course"];
+  const requiredSkills = meta["Required Skills"];
+  const niceToHave = meta["Nice to Have"];
+  const hoursPerWeek = meta["Hours/Week"];
+  const startDate = meta["Start"];
+  const duration = meta["Duration"];
+  const compensation = meta["Compensation"];
+  const openTo = meta["Open to"];
+  const programs = meta["Programs"];
+  const applicationMethod = meta["Application"];
+  const applyLink = meta["Apply Link"];
+  const status = meta["Status"];
 
   return (
-    <div className="max-w-2xl mx-auto py-6 space-y-4">
-      <Link href="/" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors">
-        <ArrowLeft size={16} />
-        Back to feed
-      </Link>
+    <div className="max-w-3xl mx-auto py-6 relative">
+      {/* Login prompt toast */}
+      {loginPrompt && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm px-6 py-3 rounded-xl shadow-lg animate-fade-in flex items-center gap-2">
+          <Link href="/login" className="underline font-medium">Sign in</Link>
+          <span>to {loginPrompt}</span>
+        </div>
+      )}
 
-      {/* Main post */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        {/* Author */}
-        <div className="flex items-center gap-3 mb-5">
-          <Link href={`/profile/${post.author.id}`}>
-            <div className="w-10 h-10 rounded-full bg-purple-100 text-[#7E3AF2] flex items-center justify-center text-sm font-bold cursor-pointer">
-              {post.author.name.charAt(0)}
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 font-medium mb-6 transition-colors"
+      >
+        <ArrowLeft size={16} />
+        Back
+      </button>
+
+      <div className="space-y-6">
+        {/* Header card */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-8">
+          {/* Author + actions */}
+          <div className="flex items-start justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-purple-100 text-[#5D0096] flex items-center justify-center text-lg font-bold">
+                {post.author.name.charAt(0)}
+              </div>
+              <div>
+                <p className="font-semibold text-slate-900">{post.author.name}</p>
+                <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                  <span className="flex items-center gap-1"><BookOpen size={12} />{post.author.department}</span>
+                  <span>&middot;</span>
+                  <span>{post.author.is_professor ? "Professor" : `Year ${post.author.year}`}</span>
+                </div>
+              </div>
             </div>
-          </Link>
-          <div className="flex-1 min-w-0">
-            <Link href={`/profile/${post.author.id}`} className="text-sm font-semibold text-slate-900 hover:text-[#7E3AF2] transition-colors">
-              {post.author.name}
-            </Link>
-            <p className="text-xs text-slate-400">{post.author.department} &middot; Year {post.author.year}</p>
+
+            {isOwner && (
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/post/${post.id}/edit`}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+                >
+                  <Pencil size={15} />
+                  Edit
+                </Link>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 hover:bg-red-50 transition-all"
+                >
+                  <Trash2 size={15} />
+                  Delete
+                </button>
+              </div>
+            )}
           </div>
-          <span className="text-xs text-slate-400 flex items-center gap-1 flex-shrink-0">
-            <Clock size={12} />
-            {timeAgo(post.created_at)}
-          </span>
+
+          {/* Title */}
+          <h1 className="text-2xl font-bold text-slate-900 mb-4">{post.title}</h1>
+
+          {/* Tags */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            <span className={`text-xs px-3 py-1 rounded-full font-semibold ${STAGE_COLORS[post.project_stage] || "bg-slate-100 text-slate-600"}`}>
+              {STAGES[post.project_stage] || post.project_stage}
+            </span>
+            {projectType && (
+              <span className="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-medium">
+                {projectType}
+              </span>
+            )}
+            {status && (
+              <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                status === "Actively Recruiting" ? "bg-green-100 text-green-700" :
+                status === "Waitlist" ? "bg-amber-100 text-amber-700" :
+                "bg-red-100 text-red-700"
+              }`}>
+                {status}
+              </span>
+            )}
+            {post.field.map((f) => (
+              <span key={f} className={`text-xs px-3 py-1 rounded-full font-medium ${DOMAIN_COLORS[f] || "bg-slate-100 text-slate-600"}`}>
+                {DOMAIN_LABELS[f] || f}
+              </span>
+            ))}
+          </div>
+
+          {/* Meta info row */}
+          <div className="flex flex-wrap gap-4 text-xs text-slate-500 mb-6">
+            <span className="flex items-center gap-1.5">
+              <Clock size={13} />
+              {timeAgo(post.created_at)}
+            </span>
+            {timeline && (
+              <span className="flex items-center gap-1.5">
+                <Calendar size={13} />
+                {timeline}
+              </span>
+            )}
+            {lookingFor && (
+              <span className="flex items-center gap-1.5 text-emerald-600 font-medium">
+                <Users size={13} />
+                {lookingFor}
+              </span>
+            )}
+          </div>
+
+          {/* Description */}
+          <div className="prose prose-slate prose-sm max-w-none">
+            <p className="text-slate-700 leading-relaxed whitespace-pre-line">{description}</p>
+          </div>
         </div>
 
-        <h1 className="text-xl font-bold text-slate-900 mb-3">{post.title}</h1>
-        <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed mb-4">{description}</p>
+        {/* Media gallery */}
+        {post.media.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-slate-900 mb-4">Screenshots</h2>
+            <div className="grid grid-cols-3 gap-3">
+              {post.media.map((url, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedImage(`${API_URL}${url}`)}
+                  className="aspect-video rounded-xl bg-slate-100 overflow-hidden hover:opacity-90 transition-opacity"
+                >
+                  <img src={`${API_URL}${url}`} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-        {/* Meta info block */}
-        {Object.keys(meta).length > 0 && (
-          <div className="text-xs text-slate-500 space-y-1.5 mb-4 bg-slate-50 border border-slate-100 rounded-lg p-3">
-            {Object.entries(meta).map(([k, v]) => (
-              <div key={k} className="flex gap-2 items-start">
-                <span className="font-semibold text-slate-600 shrink-0">{k}:</span>
-                {(k === "GitHub" || k === "Demo") ? (
-                  <a href={v} target="_blank" rel="noopener noreferrer" className="text-[#7E3AF2] hover:underline flex items-center gap-1 break-all">
-                    {v} <ExternalLink size={10} className="shrink-0" />
+        {/* Tech stack */}
+        {post.tech_stack.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-slate-900 mb-3">Tech Stack</h2>
+            <div className="flex flex-wrap gap-2">
+              {post.tech_stack.map((t) => (
+                <span key={t} className="text-sm px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-medium">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Research project details */}
+        {(lab || compensation || hoursPerWeek || openTo || requiredSkills) && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+            <h2 className="text-sm font-semibold text-slate-900">Research Details</h2>
+
+            <div className="grid grid-cols-2 gap-4">
+              {lab && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Lab</p>
+                  <p className="text-sm text-slate-700">{lab}</p>
+                </div>
+              )}
+              {course && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Course</p>
+                  <p className="text-sm text-slate-700">{course}</p>
+                </div>
+              )}
+              {compensation && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Compensation</p>
+                  <p className="text-sm text-slate-700">{compensation}</p>
+                </div>
+              )}
+              {hoursPerWeek && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Hours / Week</p>
+                  <p className="text-sm text-slate-700">{hoursPerWeek}</p>
+                </div>
+              )}
+              {startDate && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Start Date</p>
+                  <p className="text-sm text-slate-700">{startDate}</p>
+                </div>
+              )}
+              {duration && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Duration</p>
+                  <p className="text-sm text-slate-700">{duration}</p>
+                </div>
+              )}
+              {openTo && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Open To</p>
+                  <p className="text-sm text-slate-700">{openTo}</p>
+                </div>
+              )}
+              {programs && (
+                <div>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Programs</p>
+                  <p className="text-sm text-slate-700">{programs}</p>
+                </div>
+              )}
+            </div>
+
+            {requiredSkills && (
+              <div>
+                <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-2">Required Skills</p>
+                <div className="flex flex-wrap gap-2">
+                  {requiredSkills.split(", ").map((s) => (
+                    <span key={s} className="text-sm px-3 py-1 rounded-lg bg-purple-50 text-purple-700 font-medium">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {niceToHave && (
+              <div>
+                <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-2">Nice to Have</p>
+                <div className="flex flex-wrap gap-2">
+                  {niceToHave.split(", ").map((s) => (
+                    <span key={s} className="text-sm px-3 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {applicationMethod && (
+              <div>
+                <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-2">How to Apply</p>
+                {applyLink ? (
+                  <a
+                    href={applyLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-[#5D0096] font-medium hover:underline"
+                  >
+                    <ExternalLink size={14} />
+                    {applicationMethod}
+                  </a>
+                ) : applicationMethod === "Apply via email" ? (
+                  <a
+                    href={`mailto:${post.author.email}`}
+                    className="inline-flex items-center gap-2 text-sm text-[#5D0096] font-medium hover:underline"
+                  >
+                    <Mail size={14} />
+                    Email {post.author.name}
                   </a>
                 ) : (
-                  <span className="break-words">{v}</span>
+                  <p className="text-sm text-slate-700">{applicationMethod}</p>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Media */}
-        {post.media && post.media.length > 0 && (
-          <div className="flex gap-3 mb-4 flex-wrap">
-            {post.media.map((url, i) => (
-              <img
-                key={i}
-                src={`${API_URL}${url}`}
-                alt=""
-                className="rounded-xl max-h-72 object-cover border border-slate-100"
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Tags */}
-        <div className="flex flex-wrap gap-1.5 mb-5">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLORS[post.project_stage] || "bg-slate-100 text-slate-600"}`}>
-            {STAGES[post.project_stage] || post.project_stage}
-          </span>
-          {post.field.map((f) => (
-            <span key={f} className={`text-xs px-2 py-0.5 rounded-full font-medium ${DOMAIN_COLORS[f] || "bg-slate-100 text-slate-600"}`}>
-              {DOMAIN_LABELS[f] || f}
-            </span>
-          ))}
-          {post.tech_stack.map((t) => (
-            <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{t}</span>
-          ))}
-        </div>
-
-        {/* GitHub / Demo from meta as icon links */}
-        {(meta["GitHub"] || meta["Demo"]) && (
-          <div className="flex gap-3 mb-4">
-            {meta["GitHub"] && (
-              <a href={meta["GitHub"]} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors">
-                <Github size={14} /> GitHub
-              </a>
-            )}
-            {meta["Demo"] && (
-              <a href={meta["Demo"]} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors">
-                <ExternalLink size={14} /> Demo
-              </a>
             )}
           </div>
         )}
 
-        {/* Actions */}
-        {!isAuthor && (
-          <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
-            {currentUserId && (
-              <Link
-                href={`/messages/${post.author.id}`}
-                className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#7E3AF2] transition-colors border border-slate-200 px-4 py-2 rounded-lg hover:border-[#7E3AF2]"
-              >
-                <MessageCircle size={15} />
-                Message {post.author.name.split(" ")[0]}
-              </Link>
-            )}
+        {/* Links */}
+        {(githubUrl || demoUrl) && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-slate-900 mb-3">Links</h2>
+            <div className="flex gap-4">
+              {githubUrl && (
+                <a
+                  href={githubUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-slate-600 hover:text-[#5D0096] font-medium transition-colors"
+                >
+                  <Github size={16} />
+                  GitHub Repository
+                </a>
+              )}
+              {demoUrl && (
+                <a
+                  href={demoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-slate-600 hover:text-[#5D0096] font-medium transition-colors"
+                >
+                  <ExternalLink size={16} />
+                  Live Demo
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Action bar */}
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="px-2 py-1 flex">
             <button
               onClick={handleLike}
-              title="Let them know you noticed."
-              className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg transition-colors ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 liked
-                  ? "text-[#7E3AF2] bg-purple-50"
-                  : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                  ? "text-[#5D0096]"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
               }`}
             >
-              <Bookmark size={15} fill={liked ? "currentColor" : "none"} />
-              {liked ? "Noticed" : "Notice"}
+              <ThumbsUp size={18} fill={liked ? "currentColor" : "none"} />
+              {liked ? "Liked" : "Like"}
             </button>
+            <button
+              onClick={toggleComments}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                showComments
+                  ? "text-[#5D0096]"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              }`}
+            >
+              <MessageSquare size={18} />
+              Comment
+            </button>
+            <button
+              onClick={handleShare}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                copied
+                  ? "text-emerald-600"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              }`}
+            >
+              {copied ? <Check size={18} /> : <Share2 size={18} />}
+              {copied ? "Copied!" : "Copy Link"}
+            </button>
+            <button
+              onClick={() => {
+                if (requireAuth("send a message")) window.location.href = `/messages/${post.author.id}`;
+              }}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+            >
+              <Mail size={18} />
+              Message
+            </button>
+          </div>
+
+          {/* Comments section */}
+          {showComments && (
+            <div className="border-t border-slate-100 px-5 py-4 space-y-4">
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-xs font-bold shrink-0">
+                  You
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleComment(); } }}
+                    placeholder="Add a comment..."
+                    className="flex-1 px-4 py-2 rounded-full border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-1 focus:ring-purple-100 outline-none transition-all"
+                  />
+                  <button
+                    onClick={handleComment}
+                    disabled={!commentText.trim() || submitting}
+                    className="px-4 py-2 rounded-full bg-[#5D0096] text-white text-sm font-medium hover:bg-[#865DA4] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Post
+                  </button>
+                </div>
+              </div>
+
+              {loadingComments ? (
+                <p className="text-xs text-slate-400 text-center py-2">Loading comments...</p>
+              ) : comments.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-2">No comments yet. Be the first!</p>
+              ) : (
+                <div className="space-y-3">
+                  {comments.map((c) => (
+                    <div key={c.id} className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-xs font-bold shrink-0">
+                        {c.user.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="bg-slate-50 rounded-xl px-4 py-2.5">
+                          <p className="text-sm font-semibold text-slate-900">{c.user.name}</p>
+                          <p className="text-sm text-slate-600">{c.body}</p>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1 ml-4">{timeAgo(c.created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Author stats (owner only) */}
+        {isOwner && post.view_count !== undefined && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-slate-900 mb-4">Your Stats</h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center p-4 rounded-xl bg-slate-50">
+                <div className="text-2xl font-bold text-slate-900">{post.view_count}</div>
+                <div className="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+                  <Eye size={12} /> Views
+                </div>
+              </div>
+              <div className="text-center p-4 rounded-xl bg-purple-50">
+                <div className="text-2xl font-bold text-[#5D0096]">{post.prof_view_count}</div>
+                <div className="text-xs text-slate-500 mt-1">Prof Views</div>
+              </div>
+              <div className="text-center p-4 rounded-xl bg-pink-50">
+                <div className="text-2xl font-bold text-pink-600">{post.likes?.length || 0}</div>
+                <div className="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
+                  <Heart size={12} /> Likes
+                </div>
+              </div>
+            </div>
+
+            {post.likes && post.likes.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs text-slate-400 font-medium mb-2">Liked by</p>
+                <div className="space-y-2">
+                  {post.likes.map((u) => (
+                    <div key={u.id} className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-[10px] font-bold">
+                        {u.name.charAt(0)}
+                      </div>
+                      <span className="text-sm text-slate-700">{u.name}</span>
+                      <span className="text-xs text-slate-400">{u.department}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Author analytics + who noticed */}
-      {isAuthor && authorView && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-          <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Post Analytics</h2>
-
-          <div className="flex gap-8">
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{authorView.view_count}</p>
-              <p className="text-xs text-slate-400 mt-0.5">Total views</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-[#7E3AF2]">{authorView.prof_view_count}</p>
-              <p className="text-xs text-slate-400 mt-0.5">Prof views</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-emerald-600">{authorView.likes.length}</p>
-              <p className="text-xs text-slate-400 mt-0.5">Noticed by</p>
-            </div>
-          </div>
-
-          {authorView.likes.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">People who noticed</p>
-              <div className="space-y-2">
-                {authorView.likes.map((liker) => (
-                  <div key={liker.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                    <div className="w-8 h-8 rounded-full bg-purple-100 text-[#7E3AF2] flex items-center justify-center text-xs font-bold flex-shrink-0">
-                      {liker.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <Link href={`/profile/${liker.id}`} className="text-sm font-medium text-slate-900 hover:text-[#7E3AF2] transition-colors">
-                        {liker.name}
-                      </Link>
-                      <p className="text-xs text-slate-400 truncate">{liker.department}</p>
-                    </div>
-                    <Link
-                      href={`/messages/${liker.id}`}
-                      className="text-xs font-medium text-[#7E3AF2] hover:underline flex-shrink-0"
-                    >
-                      Message
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Image lightbox */}
+      {selectedImage && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8 cursor-pointer"
+          onClick={() => setSelectedImage(null)}
+        >
+          <img src={selectedImage} alt="" className="max-w-full max-h-full rounded-xl" />
         </div>
       )}
     </div>

@@ -49,7 +49,7 @@ export default function LoginPage() {
       <div className="bg-white border border-slate-200 rounded-[2rem] p-10 shadow-xl shadow-slate-200/50">
         <div className="text-center mb-10">
           <h2 className="text-2xl font-bold">Welcome Back</h2>
-          <p className="text-slate-500 mt-1">Log in to your account</p>
+          <p className="text-slate-500 mt-1">Sign in to your account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -100,12 +100,12 @@ export default function LoginPage() {
             {loading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Logging in...
+                Signing in...
               </>
             ) : (
               <>
                 <LogIn className="w-5 h-5" />
-                Log In
+                Sign In
               </>
             )}
           </button>
@@ -113,8 +113,8 @@ export default function LoginPage() {
 
         <p className="text-center text-sm text-slate-500 mt-8">
           Don&apos;t have an account?{" "}
-          <Link href="/verify" className="text-[#7E3AF2] font-medium hover:underline">
-            Join the network
+          <Link href="/register" className="text-[#7E3AF2] font-medium hover:underline">
+            Sign up
           </Link>
         </p>
       </div>

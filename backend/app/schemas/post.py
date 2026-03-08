@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from app.schemas.user import UserPublic
 
 VALID_STAGES = {"idea", "early_prototype", "working_prototype", "polished", "shipped"}
-VALID_CATEGORIES = {"hardware", "software", "both"}
+VALID_CATEGORIES = {"hardware", "software", "both", "question", "news", "discussion"}
 VALID_FIELDS = {
     "sustainability", "ai_ml", "healthcare", "robotics", "fintech",
     "embedded", "web", "mobile", "data", "security", "other",
@@ -103,3 +103,23 @@ class PostListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class CommentCreate(BaseModel):
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def body_max(cls, v: str) -> str:
+        if len(v) > 500:
+            raise ValueError("Comment max 500 chars")
+        return v.strip()
+
+
+class CommentPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user: UserPublic
+    body: str
+    created_at: datetime

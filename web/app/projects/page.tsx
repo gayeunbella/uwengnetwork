@@ -260,9 +260,8 @@ function FilterSidebar({
   );
 }
 
-function PostCard({ post, onLoginPrompt }: { post: Post; onLoginPrompt: (msg: string) => void }) {
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
+function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPrompt: (msg: string) => void; initialLiked?: boolean }) {
+  const [liked, setLiked] = useState(initialLiked || false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
@@ -288,7 +287,6 @@ function PostCard({ post, onLoginPrompt }: { post: Post; onLoginPrompt: (msg: st
       if (res.ok) {
         const data = await res.json();
         setLiked(data.liked);
-        setLikeCount((prev) => data.liked ? prev + 1 : Math.max(0, prev - 1));
       }
     } catch { /* ignore */ }
   };
@@ -422,27 +420,6 @@ function PostCard({ post, onLoginPrompt }: { post: Post; onLoginPrompt: (msg: st
         )}
       </Link>
 
-      {/* Counts bar */}
-      {(likeCount > 0 || comments.length > 0) && (
-        <div className="px-5 py-2 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-1.5">
-            {likeCount > 0 && (
-              <>
-                <div className="w-4 h-4 rounded-full bg-[#5D0096] flex items-center justify-center">
-                  <ThumbsUp size={9} className="text-white" />
-                </div>
-                {likeCount}
-              </>
-            )}
-          </div>
-          {comments.length > 0 && (
-            <button onClick={toggleComments} className="hover:underline hover:text-slate-700">
-              {comments.length} comment{comments.length !== 1 ? "s" : ""}
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Action bar */}
       <div className="border-t border-slate-100 px-2 py-1 flex">
         <button
@@ -454,7 +431,7 @@ function PostCard({ post, onLoginPrompt }: { post: Post; onLoginPrompt: (msg: st
           }`}
         >
           <ThumbsUp size={18} fill={liked ? "currentColor" : "none"} />
-          Like
+          {liked ? "Liked" : "Like"}
         </button>
         <button
           onClick={toggleComments}
@@ -554,6 +531,7 @@ export default function ProjectsPage() {
   const [profLabOnly, setProfLabOnly] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
 
   const showLoginPrompt = (action: string) => {
     setLoginPrompt(action);
@@ -564,6 +542,13 @@ export default function ProjectsPage() {
     setLoggedIn(isLoggedIn());
     const handler = () => setLoggedIn(isLoggedIn());
     window.addEventListener("auth-change", handler);
+    const token = localStorage.getItem("token");
+    if (token) {
+      fetch(`${API_URL}/api/posts/liked`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => res.ok ? res.json() : [])
+        .then((ids: string[]) => setLikedIds(new Set(ids)))
+        .catch(() => {});
+    }
     return () => window.removeEventListener("auth-change", handler);
   }, []);
 
@@ -578,6 +563,7 @@ export default function ProjectsPage() {
       if (openToCollab) params.set("looking_for", "collaborators");
       if (profLabOnly) params.set("prof_lab", "true");
       params.set("page_size", "50");
+      params.set("exclude_categories", "question,news,discussion");
       const res = await fetch(`${API_URL}/api/posts?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
@@ -693,7 +679,7 @@ export default function ProjectsPage() {
           ) : (
             <div className="space-y-4">
               {posts.map((post) => (
-                <PostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} />
+                <PostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} initialLiked={likedIds.has(post.id)} />
               ))}
             </div>
           )}

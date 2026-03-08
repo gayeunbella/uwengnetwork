@@ -72,7 +72,7 @@ def get_optional_user(
 
 
 def require_verified(current_user=Depends(get_current_user)):
-    if not current_user.is_verified:
+    if not current_user.is_verified and not current_user.is_professor:
         raise HTTPException(
             status_code=403, detail="WATCARD verification required"
         )
