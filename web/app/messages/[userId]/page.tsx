@@ -10,8 +10,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type Message = {
   id: string;
-  sender_id: string;
-  receiver_id: string;
+  sender_id?: string;
+  receiver_id?: string;
+  sender?: { id: string; name: string };
+  receiver?: { id: string; name: string };
   body: string;
   created_at: string;
 };
@@ -23,7 +25,10 @@ type UserInfo = {
 };
 
 function timeAgo(dateStr: string) {
-  const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  if (!dateStr) return "";
+  const normalized = dateStr.endsWith("Z") || dateStr.includes("+") ? dateStr : dateStr + "Z";
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return "";
   const diff = Date.now() - date.getTime();
   if (diff < 0) return "now";
   const mins = Math.floor(diff / 60000);
@@ -133,7 +138,8 @@ export default function ConversationPage() {
           </p>
         ) : (
           messages.map((msg) => {
-            const isMine = msg.sender_id === currentUserId;
+            const senderId = msg.sender?.id || msg.sender_id || "";
+            const isMine = senderId === currentUserId;
             return (
               <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm ${

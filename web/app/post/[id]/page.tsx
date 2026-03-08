@@ -73,7 +73,10 @@ type PostDetail = {
 };
 
 function timeAgo(dateStr: string) {
-  const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  if (!dateStr) return "";
+  const normalized = dateStr.endsWith("Z") || dateStr.includes("+") ? dateStr : dateStr + "Z";
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return "";
   const diff = Date.now() - date.getTime();
   if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
@@ -276,7 +279,13 @@ export default function PostDetailPage() {
 
       {/* Back button */}
       <button
-        onClick={() => router.back()}
+        onClick={() => {
+          if (window.history.length > 1) {
+            router.back();
+          } else {
+            router.push("/");
+          }
+        }}
         className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 font-medium mb-6 transition-colors"
       >
         <ArrowLeft size={16} />

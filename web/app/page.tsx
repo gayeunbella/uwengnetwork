@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { isLoggedIn } from "@/lib/auth";
-import { Search, Plus, Eye, Clock, ThumbsUp, MessageSquare, Share2, Mail, Check } from "lucide-react";
+import { Search, Eye, Clock, ThumbsUp, MessageSquare, Share2, Mail, Check } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -75,7 +75,10 @@ type Post = {
 };
 
 function timeAgo(dateStr: string) {
-  const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  if (!dateStr) return "";
+  const normalized = dateStr.endsWith("Z") || dateStr.includes("+") ? dateStr : dateStr + "Z";
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return "";
   const diff = Date.now() - date.getTime();
   if (diff < 0) return "just now";
   const mins = Math.floor(diff / 60000);
@@ -437,15 +440,6 @@ export default function HomePage() {
           <h1 className="text-2xl font-bold text-slate-900">Discover</h1>
           <p className="text-sm text-slate-500">See what UW Engineers are building</p>
         </div>
-        {loggedIn && (
-          <Link
-            href="/post/new"
-            className="bg-[#5D0096] text-white px-5 py-2.5 rounded-xl font-medium text-sm hover:bg-[#865DA4] transition-all flex items-center gap-2"
-          >
-            <Plus size={16} />
-            New Post
-          </Link>
-        )}
       </div>
 
       {/* Search bar */}

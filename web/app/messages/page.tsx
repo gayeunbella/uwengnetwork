@@ -22,7 +22,10 @@ type ThreadPreview = {
 };
 
 function timeAgo(dateStr: string) {
-  const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  if (!dateStr) return "";
+  const normalized = dateStr.endsWith("Z") || dateStr.includes("+") ? dateStr : dateStr + "Z";
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return "";
   const diff = Date.now() - date.getTime();
   if (diff < 0) return "now";
   const mins = Math.floor(diff / 60000);
