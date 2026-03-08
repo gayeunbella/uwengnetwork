@@ -3,20 +3,48 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Compass, FlaskConical, MessageCircle, User, LogOut, LogIn, ShieldCheck } from "lucide-react";
+import { Compass, FlaskConical, MessageCircle, User, LogOut, LogIn, ShieldCheck, Bell } from "lucide-react";
 import { clearAuth, isLoggedIn } from "@/lib/auth";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [loggedIn, setLoggedIn] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    setLoggedIn(isLoggedIn());
-    const handler = () => setLoggedIn(isLoggedIn());
-    window.addEventListener("auth-change", handler);
-    return () => window.removeEventListener("auth-change", handler);
+    const update = () => setLoggedIn(isLoggedIn());
+    update();
+    window.addEventListener("auth-change", update);
+    return () => window.removeEventListener("auth-change", update);
   }, []);
+
+  // Poll unread notifications every 30s
+  useEffect(() => {
+    if (!loggedIn) { setUnreadCount(0); return; }
+
+    const fetchUnread = () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      fetch(`${API_URL}/api/notifications?unread=true&page_size=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data) setUnreadCount(data.unread_count ?? 0); })
+        .catch(() => {});
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [loggedIn]);
+
+  // Clear badge when on notifications page
+  useEffect(() => {
+    if (pathname === "/notifications") setUnreadCount(0);
+  }, [pathname]);
 
   const handleSignOut = () => {
     clearAuth();
@@ -35,7 +63,14 @@ export default function Sidebar() {
         <NavItem href="/" icon={<Compass size={18} />} label="Discover" active={pathname === "/"} />
         <NavItem href="/research" icon={<FlaskConical size={18} />} label="Research & Profs" active={pathname.startsWith("/research")} />
         <NavItem href="/messages" icon={<MessageCircle size={18} />} label="Messages" active={pathname.startsWith("/messages")} />
-        <NavItem href="/profile" icon={<User size={18} />} label="Profile" active={pathname.startsWith("/profile")} />
+        <NavItem
+          href="/notifications"
+          icon={<Bell size={18} />}
+          label="Notifications"
+          active={pathname === "/notifications"}
+          badge={unreadCount > 0 ? unreadCount : undefined}
+        />
+        <NavItem href="/profile" icon={<User size={18} />} label="Profile" active={pathname === "/profile" || (pathname.startsWith("/profile/") && pathname !== "/profile")} />
 
         <div className="pt-4">
           <div className="border-t border-slate-100 pt-4">
@@ -60,7 +95,15 @@ export default function Sidebar() {
   );
 }
 
-function NavItem({ href, icon, label, active }: { href: string; icon: React.ReactNode; label: string; active: boolean }) {
+function NavItem({
+  href, icon, label, active, badge,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  badge?: number;
+}) {
   return (
     <Link
       href={href}
@@ -70,7 +113,13 @@ function NavItem({ href, icon, label, active }: { href: string; icon: React.Reac
           : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
       }`}
     >
-      {icon} {label}
+      <span className="flex-shrink-0">{icon}</span>
+      <span className="flex-1">{label}</span>
+      {badge !== undefined && (
+        <span className="min-w-[20px] h-5 rounded-full bg-[#7E3AF2] text-white text-xs flex items-center justify-center px-1.5 font-medium">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </Link>
   );
 }
