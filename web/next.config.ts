@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  basePath: '/web', 
+  basePath: '/uwengnetwork',
+  output: 'export',
 }
 
 module.exports = nextConfig
