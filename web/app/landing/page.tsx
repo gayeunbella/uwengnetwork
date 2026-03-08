@@ -1,38 +1,8 @@
-"use client";
-
-import { useState, useCallback, useRef } from "react";
 import Link from "next/link";
 
 export default function LandingPage() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }, []);
-
   return (
-    <div
-      ref={containerRef}
-      onMouseMove={handleMouseMove}
-      className="-m-8 min-h-[calc(100vh)] relative overflow-hidden flex items-center justify-center bg-[#5D0096]"
-    >
-      {/* Interactive cursor glow */}
-      <div
-        className="absolute pointer-events-none rounded-full"
-        style={{
-          width: "50%",
-          paddingBottom: "50%",
-          left: mousePos.x,
-          top: mousePos.y,
-          transform: "translate(-50%, -50%)",
-          background: "radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.15) 35%, rgba(255,255,255,0.05) 55%, transparent 70%)",
-          transition: "left 0.15s ease-out, top 0.15s ease-out",
-        }}
-      />
-
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center bg-[#5D0096]">
       {/* Content */}
       <div className="relative z-10 text-center px-6 max-w-5xl">
         <h1 className="text-6xl md:text-7xl font-extrabold tracking-tight text-white mb-10 leading-[1.1]">

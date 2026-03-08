@@ -48,7 +48,7 @@ export default function Sidebar() {
 
   const handleSignOut = () => {
     clearAuth();
-    router.push("/");
+    router.push("/landing");
   };
 
   return (
