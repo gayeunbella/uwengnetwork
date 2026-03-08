@@ -34,6 +34,7 @@ def get_posts(
     page_size: int = Query(20, ge=1, le=50),
     stage: Optional[str] = None,
     category: Optional[str] = None,
+    exclude_categories: Optional[str] = None,
     tech: Optional[str] = None,
     field: Optional[str] = None,
     search: Optional[str] = None,
@@ -46,6 +47,9 @@ def get_posts(
         query = query.filter(DevLogPost.project_stage == stage)
     if category:
         query = query.filter(DevLogPost.category == category)
+    if exclude_categories:
+        excluded = [c.strip() for c in exclude_categories.split(",")]
+        query = query.filter(~DevLogPost.category.in_(excluded))
     if tech:
         query = query.filter(DevLogPost.tech_stack.ilike(f"%{tech}%"))
     if field:
@@ -80,7 +84,7 @@ def get_posts(
 def create_post(
     title: str = Form(...),
     body: str = Form(...),
-    project_stage: str = Form(...),
+    project_stage: Optional[str] = Form(None),
     category: str = Form(...),
     tech_stack: str = Form("[]"),
     field: str = Form("[]"),
@@ -88,6 +92,11 @@ def create_post(
     current_user=Depends(require_verified),
     db: Session = Depends(get_db),
 ):
+    community_categories = {"question", "news", "discussion"}
+    if category in community_categories:
+        project_stage = project_stage or "idea"
+    elif not project_stage:
+        raise HTTPException(422, "project_stage is required")
     if project_stage not in VALID_STAGES:
         raise HTTPException(422, f"project_stage must be one of {sorted(VALID_STAGES)}")
     if category not in VALID_CATEGORIES:
@@ -140,6 +149,15 @@ def create_post(
     return PostPublic.model_validate(post)
 
 
+@router.get("/liked")
+def get_my_liked_post_ids(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    liked = db.query(PostLike.post_id).filter(PostLike.user_id == current_user.id).all()
+    return [row[0] for row in liked]
+
+
 @router.get("/{post_id}")
 def get_post(
     post_id: str,
@@ -166,7 +184,14 @@ def get_post(
             post.prof_view_count += 1
         db.commit()
 
-    return PostPublic.model_validate(post)
+    result = PostPublic.model_validate(post).model_dump()
+    if current_user:
+        liked = db.query(PostLike).filter(
+            PostLike.post_id == post_id,
+            PostLike.user_id == current_user.id,
+        ).first() is not None
+        result["liked_by_me"] = liked
+    return result
 
 
 @router.delete("/{post_id}", status_code=204)

@@ -7,6 +7,15 @@ import { isLoggedIn } from "@/lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const DEPARTMENTS = [
+  "Chemical Engineering",
+  "Civil and Environmental Engineering",
+  "Electrical and Computer Engineering",
+  "Management Sciences",
+  "Mechanical and Mechatronics Engineering",
+  "Systems Design Engineering",
+];
+
 const DOMAIN_LABELS: Record<string, string> = {
   ai_ml: "AI / ML", healthcare: "Healthcare", sustainability: "Sustainability",
   robotics: "Robotics", embedded: "Embedded", fintech: "Fintech",
@@ -202,9 +211,8 @@ function ResearchFilterSidebar({
   );
 }
 
-function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLoginPrompt: (msg: string) => void }) {
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
+function ResearchPostCard({ post, onLoginPrompt, initialLiked }: { post: ResearchPost; onLoginPrompt: (msg: string) => void; initialLiked?: boolean }) {
+  const [liked, setLiked] = useState(initialLiked || false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
@@ -230,7 +238,6 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
       if (res.ok) {
         const data = await res.json();
         setLiked(data.liked);
-        setLikeCount((prev) => data.liked ? prev + 1 : Math.max(0, prev - 1));
       }
     } catch { /* ignore */ }
   };
@@ -391,27 +398,6 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
         )}
       </Link>
 
-      {/* Counts bar */}
-      {(likeCount > 0 || comments.length > 0) && (
-        <div className="px-5 py-2 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-1.5">
-            {likeCount > 0 && (
-              <>
-                <div className="w-4 h-4 rounded-full bg-[#5D0096] flex items-center justify-center">
-                  <ThumbsUp size={9} className="text-white" />
-                </div>
-                {likeCount}
-              </>
-            )}
-          </div>
-          {comments.length > 0 && (
-            <button onClick={toggleComments} className="hover:underline hover:text-slate-700">
-              {comments.length} comment{comments.length !== 1 ? "s" : ""}
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Action bar */}
       <div className="border-t border-slate-100 px-2 py-1 flex">
         <button
@@ -423,7 +409,7 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
           }`}
         >
           <ThumbsUp size={18} fill={liked ? "currentColor" : "none"} />
-          Like
+          {liked ? "Liked" : "Like"}
         </button>
         <button
           onClick={toggleComments}
@@ -522,6 +508,7 @@ export default function ResearchPage() {
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [isProf, setIsProf] = useState(false);
   const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
 
   const showLoginPrompt = (action: string) => {
     setLoginPrompt(action);
@@ -534,6 +521,13 @@ export default function ResearchPage() {
       if (stored) {
         const user = JSON.parse(stored);
         setIsProf(user.is_professor);
+      }
+      const token = localStorage.getItem("token");
+      if (token) {
+        fetch(`${API_URL}/api/posts/liked`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((res) => res.ok ? res.json() : [])
+          .then((ids: string[]) => setLikedIds(new Set(ids)))
+          .catch(() => {});
       }
     }
   }, []);
@@ -646,7 +640,7 @@ export default function ResearchPage() {
           ) : (
             <div className="space-y-4">
               {researchPosts.map((post) => (
-                <ResearchPostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} />
+                <ResearchPostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} initialLiked={likedIds.has(post.id)} />
               ))}
             </div>
           )}

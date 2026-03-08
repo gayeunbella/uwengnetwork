@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Compass, FlaskConical, MessageCircle, User, LogOut, LogIn, FolderOpen, GraduationCap } from "lucide-react";
+import { Compass, FlaskConical, MessageCircle, User, LogOut, LogIn, FolderOpen, GraduationCap, MessagesSquare } from "lucide-react";
 import { clearAuth, isLoggedIn } from "@/lib/auth";
 
 export default function Sidebar() {
@@ -27,7 +27,7 @@ export default function Sidebar() {
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col pt-6">
       <div className="px-6 pb-8">
         <Link href="/landing" className="text-xl font-bold tracking-tighter text-[#5D0096]">
-          UW ENG<span className="text-slate-900"> Network</span>
+          UW Eng<span className="text-slate-900"> Network</span>
         </Link>
       </div>
 
@@ -35,6 +35,7 @@ export default function Sidebar() {
         <NavItem href="/" icon={<Compass size={18} />} label="Discover" active={pathname === "/"} />
         <NavItem href="/projects" icon={<FolderOpen size={18} />} label="Projects" active={pathname.startsWith("/projects")} />
         <NavItem href="/research" icon={<FlaskConical size={18} />} label="Research" active={pathname.startsWith("/research")} />
+        <NavItem href="/community" icon={<MessagesSquare size={18} />} label="Community" active={pathname.startsWith("/community")} />
         <NavItem href="/professors" icon={<GraduationCap size={18} />} label="Professors" active={pathname.startsWith("/professors")} />
         <NavItem href="/messages" icon={<MessageCircle size={18} />} label="Messages" active={pathname.startsWith("/messages")} />
         <NavItem href="/profile" icon={<User size={18} />} label="Profile" active={pathname.startsWith("/profile")} />
