@@ -1,0 +1,26 @@
+name: Deploy App
+
+on:
+  push:
+    branches: [ main ] # Runs every time you push to main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install and Build
+        env:
+          # This maps your GitHub Secrets to the environment
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_API_VERSION: ${{ secrets.GOOGLE_API_VERSION }}
+        run: |
+          cd web
+          npm install
+          npm run build
