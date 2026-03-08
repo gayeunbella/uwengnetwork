@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, ExternalLink, Mail, FlaskConical, GraduationCap, Plus, Loader2, X } from "lucide-react";
+import { Search, ExternalLink, Mail, FlaskConical, GraduationCap, Plus, Loader2, X, Pencil, Save } from "lucide-react";
 import { isLoggedIn } from "@/lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -43,6 +43,16 @@ export default function ProfessorsPage() {
     research_interests: "",
     profile_url: "",
   });
+  const [myProfile, setMyProfile] = useState<Professor | null>(null);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    department: "",
+    research_interests: "",
+    profile_url: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -57,8 +67,14 @@ export default function ProfessorsPage() {
           fetch(`${API_URL}/api/professors/me`, {
             headers: { Authorization: `Bearer ${token}` },
           })
-            .then((res) => {
-              setHasProfile(res.ok);
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json();
+                setHasProfile(true);
+                setMyProfile(data);
+              } else {
+                setHasProfile(false);
+              }
             })
             .catch(() => setHasProfile(false));
         }
@@ -124,6 +140,57 @@ export default function ProfessorsPage() {
       setCreateError("Failed to connect to server");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const startEdit = () => {
+    if (!myProfile) return;
+    setEditForm({
+      name: myProfile.name,
+      department: myProfile.department,
+      research_interests: myProfile.research_interests.join(", "),
+      profile_url: myProfile.profile_url,
+    });
+    setShowEditForm(true);
+    setEditError(null);
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setEditError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const interests = editForm.research_interests
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const res = await fetch(`${API_URL}/api/professors/me`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: editForm.name,
+          department: editForm.department,
+          research_interests: interests,
+          profile_url: editForm.profile_url,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setMyProfile(updated);
+        setShowEditForm(false);
+        fetchProfessors();
+      } else {
+        const data = await res.json();
+        setEditError(data.detail || "Failed to update profile");
+      }
+    } catch {
+      setEditError("Failed to connect to server");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -250,6 +317,128 @@ export default function ProfessorsPage() {
         </div>
       )}
 
+      {/* Edit My Profile card for professors with a profile */}
+      {isProf && hasProfile === true && myProfile && !showEditForm && (
+        <div className="bg-white border border-purple-200 rounded-2xl p-6">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-xl bg-purple-100 text-[#5D0096] flex items-center justify-center shrink-0 text-lg font-bold">
+              {myProfile.name.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-slate-900">{myProfile.name}</h3>
+                <button
+                  onClick={startEdit}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+                >
+                  <Pencil size={13} />
+                  Edit Profile
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mb-2">{myProfile.department}</p>
+              {myProfile.research_interests.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {myProfile.research_interests.map((interest) => (
+                    <span key={interest} className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                      {interest}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit profile form */}
+      {showEditForm && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-semibold text-slate-900 text-lg">Edit Your Profile</h3>
+            <button
+              onClick={() => setShowEditForm(false)}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <form onSubmit={handleEdit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
+              <input
+                type="text"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Department</label>
+              <select
+                value={editForm.department}
+                onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                required
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:border-[#5D0096] outline-none"
+              >
+                <option value="">Select department</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Research Interests</label>
+              <input
+                type="text"
+                value={editForm.research_interests}
+                onChange={(e) => setEditForm({ ...editForm, research_interests: e.target.value })}
+                placeholder="Machine Learning, Computer Vision, NLP (comma-separated)"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Profile / Lab URL</label>
+              <input
+                type="url"
+                value={editForm.profile_url}
+                onChange={(e) => setEditForm({ ...editForm, profile_url: e.target.value })}
+                placeholder="https://uwaterloo.ca/..."
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none"
+              />
+            </div>
+
+            {editError && (
+              <div className="rounded-xl p-3 bg-red-50 border border-red-200">
+                <p className="text-red-700 text-sm">{editError}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="bg-[#5D0096] text-white px-6 py-2.5 rounded-xl font-medium text-sm hover:bg-[#865DA4] transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Save Changes
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEditForm(false)}
+                className="px-6 py-2.5 rounded-xl font-medium text-sm border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Search + Department filter */}
       <div className="flex gap-3">
         <div className="flex-1 relative">
@@ -328,7 +517,7 @@ export default function ProfessorsPage() {
                   className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-[#5D0096] transition-colors"
                 >
                   <Mail size={14} />
-                  Email
+                  {prof.email}
                 </a>
                 {prof.profile_url && (
                   <a

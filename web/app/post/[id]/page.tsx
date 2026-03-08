@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Clock, Heart, Github, ExternalLink, Users, Eye,
-  Trash2, Loader2, BookOpen, Calendar, Mail, Pencil, Save, X,
+  Trash2, Loader2, BookOpen, Calendar, Mail, Pencil,
+  ThumbsUp, MessageSquare, Share2, Check,
 } from "lucide-react";
 import { isLoggedIn } from "@/lib/auth";
 
@@ -66,7 +67,6 @@ type PostDetail = {
     is_professor: boolean;
     profile_picture: string;
   };
-  // Author-only fields
   view_count?: number;
   prof_view_count?: number;
   likes?: { id: string; name: string; department: string }[];
@@ -109,9 +109,13 @@ export default function PostDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ title: "", body: "", project_stage: "", tech_stack: "" });
-  const [saving, setSaving] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<{ id: string; user: { id: string; name: string; department: string; year: string; profile_picture: string }; body: string; created_at: string }[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -131,18 +135,30 @@ export default function PostDetailPage() {
         if (!res.ok) throw new Error("Post not found");
         return res.json();
       })
-      .then((data) => setPost(data))
+      .then((data) => {
+        setPost(data);
+        if (data.liked_by_me) setLiked(true);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
 
+  const requireAuth = (action: string): boolean => {
+    if (!localStorage.getItem("token")) {
+      setLoginPrompt(action);
+      setTimeout(() => setLoginPrompt(null), 3000);
+      return false;
+    }
+    return true;
+  };
+
   const handleLike = async () => {
-    const token = localStorage.getItem("token");
-    if (!token || !post) return;
+    if (!requireAuth("like this post")) return;
+    if (!post) return;
     try {
       const res = await fetch(`${API_URL}/api/posts/${post.id}/like`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -166,54 +182,44 @@ export default function PostDetailPage() {
     finally { setDeleting(false); }
   };
 
-  const startEdit = () => {
-    if (!post) return;
-    const { description } = parseBody(post.body);
-    setEditForm({
-      title: post.title,
-      body: description,
-      project_stage: post.project_stage,
-      tech_stack: post.tech_stack.join(", "),
-    });
-    setEditing(true);
-  };
-
-  const cancelEdit = () => {
-    setEditing(false);
-  };
-
-  const handleSave = async () => {
-    if (!post) return;
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    setSaving(true);
+  const fetchComments = async () => {
+    if (!id) return;
+    setLoadingComments(true);
     try {
-      // Rebuild body with metadata
-      const { meta } = parseBody(post.body);
-      let fullBody = editForm.body;
-      const metaEntries = Object.entries(meta);
-      if (metaEntries.length > 0) {
-        fullBody += "\n\n---\n" + metaEntries.map(([k, v]) => `${k}: ${v}`).join("\n");
-      }
+      const res = await fetch(`${API_URL}/api/posts/${id}/comments`);
+      if (res.ok) setComments(await res.json());
+    } catch { /* ignore */ }
+    setLoadingComments(false);
+  };
 
-      const formData = new FormData();
-      formData.append("title", editForm.title);
-      formData.append("body", fullBody);
-      formData.append("project_stage", editForm.project_stage);
-      formData.append("tech_stack", JSON.stringify(editForm.tech_stack.split(",").map((s) => s.trim()).filter(Boolean)));
+  const toggleComments = () => {
+    if (!showComments) fetchComments();
+    setShowComments(!showComments);
+  };
 
-      const res = await fetch(`${API_URL}/api/posts/${post.id}`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+  const handleComment = async () => {
+    if (!commentText.trim() || !id) return;
+    if (!requireAuth("comment on this post")) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/posts/${id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
+        body: JSON.stringify({ body: commentText.trim() }),
       });
       if (res.ok) {
-        const updated = await res.json();
-        setPost({ ...post, ...updated });
-        setEditing(false);
+        const newComment = await res.json();
+        setComments((prev) => [...prev, newComment]);
+        setCommentText("");
       }
     } catch { /* ignore */ }
-    setSaving(false);
+    setSubmitting(false);
+  };
+
+  const handleShare = async () => {
+    await navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (loading) {
@@ -228,7 +234,7 @@ export default function PostDetailPage() {
     return (
       <div className="text-center py-20">
         <p className="text-slate-500 font-medium">{error || "Post not found"}</p>
-        <Link href="/projects" className="text-sm text-[#7E3AF2] font-medium hover:underline mt-2 inline-block">
+        <Link href="/projects" className="text-sm text-[#5D0096] font-medium hover:underline mt-2 inline-block">
           Back to Projects
         </Link>
       </div>
@@ -241,7 +247,6 @@ export default function PostDetailPage() {
   const lookingFor = meta["Looking for"];
   const timeline = meta["Timeline"];
   const projectType = meta["Type"];
-  const visibility = meta["Visibility"];
   const isOwner = currentUserId === post.author.id;
 
   // Research project fields
@@ -260,7 +265,15 @@ export default function PostDetailPage() {
   const status = meta["Status"];
 
   return (
-    <div className="max-w-3xl mx-auto py-6">
+    <div className="max-w-3xl mx-auto py-6 relative">
+      {/* Login prompt toast */}
+      {loginPrompt && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm px-6 py-3 rounded-xl shadow-lg animate-fade-in flex items-center gap-2">
+          <Link href="/login" className="underline font-medium">Sign in</Link>
+          <span>to {loginPrompt}</span>
+        </div>
+      )}
+
       {/* Back button */}
       <button
         onClick={() => router.back()}
@@ -276,7 +289,7 @@ export default function PostDetailPage() {
           {/* Author + actions */}
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-100 text-[#7E3AF2] flex items-center justify-center text-lg font-bold">
+              <div className="w-12 h-12 rounded-xl bg-purple-100 text-[#5D0096] flex items-center justify-center text-lg font-bold">
                 {post.author.name.charAt(0)}
               </div>
               <div>
@@ -289,91 +302,35 @@ export default function PostDetailPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {!isOwner && isLoggedIn() && (
-                <button
-                  onClick={handleLike}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
-                    liked
-                      ? "bg-purple-50 text-[#7E3AF2] border-purple-200"
-                      : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-                  }`}
+            {isOwner && (
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/post/${post.id}/edit`}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
                 >
-                  <Heart size={15} fill={liked ? "currentColor" : "none"} />
-                  {liked ? "Liked" : "Like"}
+                  <Pencil size={15} />
+                  Edit
+                </Link>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 hover:bg-red-50 transition-all"
+                >
+                  <Trash2 size={15} />
+                  Delete
                 </button>
-              )}
-              {isOwner && !editing && (
-                <>
-                  <button
-                    onClick={startEdit}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
-                  >
-                    <Pencil size={15} />
-                    Edit
-                  </button>
-                  <button
-                    onClick={handleDelete}
-                    disabled={deleting}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-500 hover:bg-red-50 transition-all"
-                  >
-                    <Trash2 size={15} />
-                    Delete
-                  </button>
-                </>
-              )}
-              {isOwner && editing && (
-                <>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-[#5D0096] text-white hover:bg-[#865DA4] transition-all disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                    Save
-                  </button>
-                  <button
-                    onClick={cancelEdit}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
-                  >
-                    <X size={15} />
-                    Cancel
-                  </button>
-                </>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Title */}
-          {editing ? (
-            <input
-              type="text"
-              value={editForm.title}
-              onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-              className="text-2xl font-bold text-slate-900 mb-4 w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none"
-              maxLength={100}
-            />
-          ) : (
-            <h1 className="text-2xl font-bold text-slate-900 mb-4">{post.title}</h1>
-          )}
+          <h1 className="text-2xl font-bold text-slate-900 mb-4">{post.title}</h1>
 
           {/* Tags */}
           <div className="flex flex-wrap gap-2 mb-6">
-            {editing ? (
-              <select
-                value={editForm.project_stage}
-                onChange={(e) => setEditForm({ ...editForm, project_stage: e.target.value })}
-                className="text-xs px-3 py-1 rounded-full font-semibold border border-slate-200 focus:border-[#5D0096] outline-none"
-              >
-                {Object.entries(STAGES).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            ) : (
-              <span className={`text-xs px-3 py-1 rounded-full font-semibold ${STAGE_COLORS[post.project_stage] || "bg-slate-100 text-slate-600"}`}>
-                {STAGES[post.project_stage] || post.project_stage}
-              </span>
-            )}
+            <span className={`text-xs px-3 py-1 rounded-full font-semibold ${STAGE_COLORS[post.project_stage] || "bg-slate-100 text-slate-600"}`}>
+              {STAGES[post.project_stage] || post.project_stage}
+            </span>
             {projectType && (
               <span className="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-medium">
                 {projectType}
@@ -416,19 +373,9 @@ export default function PostDetailPage() {
           </div>
 
           {/* Description */}
-          {editing ? (
-            <textarea
-              value={editForm.body}
-              onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
-              rows={6}
-              maxLength={2000}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none text-sm text-slate-700 leading-relaxed resize-y"
-            />
-          ) : (
-            <div className="prose prose-slate prose-sm max-w-none">
-              <p className="text-slate-700 leading-relaxed whitespace-pre-line">{description}</p>
-            </div>
-          )}
+          <div className="prose prose-slate prose-sm max-w-none">
+            <p className="text-slate-700 leading-relaxed whitespace-pre-line">{description}</p>
+          </div>
         </div>
 
         {/* Media gallery */}
@@ -450,26 +397,16 @@ export default function PostDetailPage() {
         )}
 
         {/* Tech stack */}
-        {(post.tech_stack.length > 0 || editing) && (
+        {post.tech_stack.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <h2 className="text-sm font-semibold text-slate-900 mb-3">Tech Stack</h2>
-            {editing ? (
-              <input
-                type="text"
-                value={editForm.tech_stack}
-                onChange={(e) => setEditForm({ ...editForm, tech_stack: e.target.value })}
-                placeholder="React, Python, PostgreSQL (comma-separated)"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none text-sm"
-              />
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {post.tech_stack.map((t) => (
-                  <span key={t} className="text-sm px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-medium">
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {post.tech_stack.map((t) => (
+                <span key={t} className="text-sm px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-medium">
+                  {t}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -559,7 +496,7 @@ export default function PostDetailPage() {
                     href={applyLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 text-sm text-[#7E3AF2] font-medium hover:underline"
+                    className="inline-flex items-center gap-2 text-sm text-[#5D0096] font-medium hover:underline"
                   >
                     <ExternalLink size={14} />
                     {applicationMethod}
@@ -567,7 +504,7 @@ export default function PostDetailPage() {
                 ) : applicationMethod === "Apply via email" ? (
                   <a
                     href={`mailto:${post.author.email}`}
-                    className="inline-flex items-center gap-2 text-sm text-[#7E3AF2] font-medium hover:underline"
+                    className="inline-flex items-center gap-2 text-sm text-[#5D0096] font-medium hover:underline"
                   >
                     <Mail size={14} />
                     Email {post.author.name}
@@ -590,7 +527,7 @@ export default function PostDetailPage() {
                   href={githubUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-slate-600 hover:text-[#7E3AF2] font-medium transition-colors"
+                  className="flex items-center gap-2 text-sm text-slate-600 hover:text-[#5D0096] font-medium transition-colors"
                 >
                   <Github size={16} />
                   GitHub Repository
@@ -601,7 +538,7 @@ export default function PostDetailPage() {
                   href={demoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-slate-600 hover:text-[#7E3AF2] font-medium transition-colors"
+                  className="flex items-center gap-2 text-sm text-slate-600 hover:text-[#5D0096] font-medium transition-colors"
                 >
                   <ExternalLink size={16} />
                   Live Demo
@@ -610,6 +547,105 @@ export default function PostDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Action bar */}
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="px-2 py-1 flex">
+            <button
+              onClick={handleLike}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                liked
+                  ? "text-[#5D0096]"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              }`}
+            >
+              <ThumbsUp size={18} fill={liked ? "currentColor" : "none"} />
+              {liked ? "Liked" : "Like"}
+            </button>
+            <button
+              onClick={toggleComments}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                showComments
+                  ? "text-[#5D0096]"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              }`}
+            >
+              <MessageSquare size={18} />
+              Comment
+            </button>
+            <button
+              onClick={handleShare}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                copied
+                  ? "text-emerald-600"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              }`}
+            >
+              {copied ? <Check size={18} /> : <Share2 size={18} />}
+              {copied ? "Copied!" : "Copy Link"}
+            </button>
+            <button
+              onClick={() => {
+                if (requireAuth("send a message")) window.location.href = `/messages/${post.author.id}`;
+              }}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+            >
+              <Mail size={18} />
+              Message
+            </button>
+          </div>
+
+          {/* Comments section */}
+          {showComments && (
+            <div className="border-t border-slate-100 px-5 py-4 space-y-4">
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-xs font-bold shrink-0">
+                  You
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleComment(); } }}
+                    placeholder="Add a comment..."
+                    className="flex-1 px-4 py-2 rounded-full border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-1 focus:ring-purple-100 outline-none transition-all"
+                  />
+                  <button
+                    onClick={handleComment}
+                    disabled={!commentText.trim() || submitting}
+                    className="px-4 py-2 rounded-full bg-[#5D0096] text-white text-sm font-medium hover:bg-[#865DA4] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Post
+                  </button>
+                </div>
+              </div>
+
+              {loadingComments ? (
+                <p className="text-xs text-slate-400 text-center py-2">Loading comments...</p>
+              ) : comments.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-2">No comments yet. Be the first!</p>
+              ) : (
+                <div className="space-y-3">
+                  {comments.map((c) => (
+                    <div key={c.id} className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-xs font-bold shrink-0">
+                        {c.user.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="bg-slate-50 rounded-xl px-4 py-2.5">
+                          <p className="text-sm font-semibold text-slate-900">{c.user.name}</p>
+                          <p className="text-sm text-slate-600">{c.body}</p>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1 ml-4">{timeAgo(c.created_at)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Author stats (owner only) */}
         {isOwner && post.view_count !== undefined && (
@@ -623,7 +659,7 @@ export default function PostDetailPage() {
                 </div>
               </div>
               <div className="text-center p-4 rounded-xl bg-purple-50">
-                <div className="text-2xl font-bold text-[#7E3AF2]">{post.prof_view_count}</div>
+                <div className="text-2xl font-bold text-[#5D0096]">{post.prof_view_count}</div>
                 <div className="text-xs text-slate-500 mt-1">Prof Views</div>
               </div>
               <div className="text-center p-4 rounded-xl bg-pink-50">
@@ -640,7 +676,7 @@ export default function PostDetailPage() {
                 <div className="space-y-2">
                   {post.likes.map((u) => (
                     <div key={u.id} className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-purple-100 text-[#7E3AF2] flex items-center justify-center text-[10px] font-bold">
+                      <div className="w-6 h-6 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-[10px] font-bold">
                         {u.name.charAt(0)}
                       </div>
                       <span className="text-sm text-slate-700">{u.name}</span>

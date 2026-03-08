@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from app.schemas.user import UserPublic
 
 VALID_STAGES = {"idea", "early_prototype", "working_prototype", "polished", "shipped"}
-VALID_CATEGORIES = {"hardware", "software", "both"}
+VALID_CATEGORIES = {"hardware", "software", "both", "question", "news", "discussion"}
 VALID_FIELDS = {
     "sustainability", "ai_ml", "healthcare", "robotics", "fintech",
     "embedded", "web", "mobile", "data", "security", "other",

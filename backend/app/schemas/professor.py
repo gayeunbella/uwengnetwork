@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -31,10 +32,10 @@ class ProfessorCreate(BaseModel):
 
 
 class ProfessorUpdate(BaseModel):
-    name: str | None = None
-    department: str | None = None
-    research_interests: list[str] | None = None
-    profile_url: str | None = None
+    name: Optional[str] = None
+    department: Optional[str] = None
+    research_interests: Optional[list[str]] = None
+    profile_url: Optional[str] = None
 
 
 class ProfessorListResponse(BaseModel):

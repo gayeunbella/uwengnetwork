@@ -3,56 +3,33 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { isLoggedIn } from "@/lib/auth";
-import { Search, Plus, Eye, Clock, ThumbsUp, MessageSquare, Share2, Mail, Check } from "lucide-react";
+import { Search, Clock, ThumbsUp, MessageSquare, Share2, Mail, Check, HelpCircle, Newspaper, MessagesSquare, Eye } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const STAGES: Record<string, string> = {
-  idea: "Idea",
-  early_prototype: "Prototype",
-  working_prototype: "MVP",
-  polished: "Production",
-  shipped: "Shipped",
+const CATEGORY_TABS = [
+  { key: "", label: "All" },
+  { key: "question", label: "Questions" },
+  { key: "news", label: "News" },
+  { key: "discussion", label: "Discussion" },
+];
+
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  question: <HelpCircle size={14} />,
+  news: <Newspaper size={14} />,
+  discussion: <MessagesSquare size={14} />,
 };
 
-const STAGE_COLORS: Record<string, string> = {
-  idea: "bg-blue-100 text-blue-700",
-  early_prototype: "bg-amber-100 text-amber-700",
-  working_prototype: "bg-emerald-100 text-emerald-700",
-  polished: "bg-purple-100 text-purple-700",
-  shipped: "bg-green-100 text-green-700",
-};
-
-const DOMAIN_LABELS: Record<string, string> = {
-  ai_ml: "AI / ML", healthcare: "Healthcare", sustainability: "Sustainability",
-  robotics: "Robotics", embedded: "Embedded", fintech: "Fintech",
-  web: "Web", mobile: "Mobile", data: "Data", security: "Security", other: "Other",
-};
-
-const DOMAIN_COLORS: Record<string, string> = {
-  ai_ml: "bg-violet-100 text-violet-700",
-  healthcare: "bg-rose-100 text-rose-700",
-  sustainability: "bg-green-100 text-green-700",
-  robotics: "bg-orange-100 text-orange-700",
-  embedded: "bg-yellow-100 text-yellow-700",
-  fintech: "bg-cyan-100 text-cyan-700",
-  web: "bg-sky-100 text-sky-700",
-  mobile: "bg-indigo-100 text-indigo-700",
-  data: "bg-teal-100 text-teal-700",
-  security: "bg-red-100 text-red-700",
-  other: "bg-slate-100 text-slate-600",
-};
-
-const COMMUNITY_CATEGORIES: Record<string, string> = {
-  question: "Question",
-  news: "News",
-  discussion: "Discussion",
-};
-
-const COMMUNITY_COLORS: Record<string, string> = {
+const CATEGORY_COLORS: Record<string, string> = {
   question: "bg-blue-100 text-blue-700",
   news: "bg-amber-100 text-amber-700",
   discussion: "bg-emerald-100 text-emerald-700",
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  question: "Question",
+  news: "News",
+  discussion: "Discussion",
 };
 
 type Post = {
@@ -74,6 +51,13 @@ type Post = {
   };
 };
 
+type Comment = {
+  id: string;
+  user: { id: string; name: string; department: string; year: string; profile_picture: string };
+  body: string;
+  created_at: string;
+};
+
 function timeAgo(dateStr: string) {
   const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
   const diff = Date.now() - date.getTime();
@@ -88,27 +72,7 @@ function timeAgo(dateStr: string) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function parseBody(body: string) {
-  const parts = body.split("\n\n---\n");
-  const description = parts[0];
-  const meta: Record<string, string> = {};
-  if (parts[1]) {
-    parts[1].split("\n").forEach((line) => {
-      const idx = line.indexOf(": ");
-      if (idx > -1) meta[line.slice(0, idx)] = line.slice(idx + 2);
-    });
-  }
-  return { description, meta };
-}
-
-type Comment = {
-  id: string;
-  user: { id: string; name: string; department: string; year: string; profile_picture: string };
-  body: string;
-  created_at: string;
-};
-
-function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPrompt: (msg: string) => void; initialLiked?: boolean }) {
+function CommunityPostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPrompt: (msg: string) => void; initialLiked?: boolean }) {
   const [liked, setLiked] = useState(initialLiked || false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -143,10 +107,7 @@ function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPr
     setLoadingComments(true);
     try {
       const res = await fetch(`${API_URL}/api/posts/${post.id}/comments`);
-      if (res.ok) {
-        const data = await res.json();
-        setComments(data);
-      }
+      if (res.ok) setComments(await res.json());
     } catch { /* ignore */ }
     setLoadingComments(false);
   };
@@ -182,10 +143,6 @@ function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPr
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const { description, meta } = parseBody(post.body);
-  const lookingFor = meta["Looking for"];
-  const status = meta["Status"];
-
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-all">
       {/* Author header */}
@@ -202,22 +159,10 @@ function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPr
               {timeAgo(post.created_at)}
             </p>
           </div>
-          <div className="flex flex-wrap gap-1.5 shrink-0 justify-end">
-            {status && (
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                status === "Actively Recruiting" ? "bg-green-100 text-green-700" :
-                status === "Waitlist" ? "bg-amber-100 text-amber-700" :
-                "bg-red-100 text-red-700"
-              }`}>
-                {status}
-              </span>
-            )}
-            {lookingFor && (
-              <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">
-                {lookingFor}
-              </span>
-            )}
-          </div>
+          <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1 ${CATEGORY_COLORS[post.category] || "bg-slate-100 text-slate-600"}`}>
+            {CATEGORY_ICONS[post.category]}
+            {CATEGORY_LABELS[post.category] || post.category}
+          </span>
         </div>
       </div>
 
@@ -225,33 +170,7 @@ function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPr
       <Link href={`/post/${post.id}`} className="block">
         <div className="px-5 pb-3">
           <h3 className="font-semibold text-slate-900 text-[15px] mb-1.5">{post.title}</h3>
-          <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">{description}</p>
-        </div>
-
-        {/* Tags */}
-        <div className="px-5 pb-3 flex flex-wrap gap-1.5">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-            COMMUNITY_CATEGORIES[post.category]
-              ? COMMUNITY_COLORS[post.category]
-              : STAGE_COLORS[post.project_stage] || "bg-slate-100 text-slate-600"
-          }`}>
-            {COMMUNITY_CATEGORIES[post.category] || STAGES[post.project_stage] || post.project_stage}
-          </span>
-          {post.field.map((f) => (
-            <span key={f} className={`text-xs px-2 py-0.5 rounded-full font-medium ${DOMAIN_COLORS[f] || "bg-slate-100 text-slate-600"}`}>
-              {DOMAIN_LABELS[f] || f}
-            </span>
-          ))}
-          {post.tech_stack.slice(0, 4).map((t) => (
-            <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
-              {t}
-            </span>
-          ))}
-          {post.tech_stack.length > 4 && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">
-              +{post.tech_stack.length - 4}
-            </span>
-          )}
+          <p className="text-sm text-slate-600 line-clamp-4 leading-relaxed whitespace-pre-line">{post.body.split("\n\n---\n")[0]}</p>
         </div>
 
         {/* Media */}
@@ -372,13 +291,21 @@ function PostCard({ post, onLoginPrompt, initialLiked }: { post: Post; onLoginPr
   );
 }
 
-export default function HomePage() {
+export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
   const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
+
+  // New post composer state
+  const [showComposer, setShowComposer] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [newCategory, setNewCategory] = useState("question");
+  const [posting, setPosting] = useState(false);
 
   const showLoginPrompt = (action: string) => {
     setLoginPrompt(action);
@@ -389,7 +316,6 @@ export default function HomePage() {
     setLoggedIn(isLoggedIn());
     const handler = () => setLoggedIn(isLoggedIn());
     window.addEventListener("auth-change", handler);
-    // Fetch liked post IDs
     const token = localStorage.getItem("token");
     if (token) {
       fetch(`${API_URL}/api/posts/liked`, { headers: { Authorization: `Bearer ${token}` } })
@@ -405,21 +331,60 @@ export default function HomePage() {
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (categoryFilter) {
+        params.set("category", categoryFilter);
+      } else {
+        // Show only community categories
+        // Fetch all three separately isn't ideal, so we fetch all and filter client-side
+        // Actually, let's just not set category and rely on the API
+      }
+      params.set("page_size", "50");
       const res = await fetch(`${API_URL}/api/posts?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setPosts(data.posts || []);
+        const communityCategories = new Set(["question", "news", "discussion"]);
+        const filtered = categoryFilter
+          ? (data.posts || [])
+          : (data.posts || []).filter((p: Post) => communityCategories.has(p.category));
+        setPosts(filtered);
       }
     } catch {
       // backend may not be running
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, categoryFilter]);
 
   useEffect(() => {
     fetchPosts();
   }, [fetchPosts]);
+
+  const handlePost = async () => {
+    if (!newTitle.trim() || !newBody.trim()) return;
+    setPosting(true);
+    try {
+      const formData = new FormData();
+      formData.append("title", newTitle.trim());
+      formData.append("body", newBody.trim());
+      formData.append("category", newCategory);
+      formData.append("tech_stack", "[]");
+      formData.append("field", "[]");
+
+      const res = await fetch(`${API_URL}/api/posts`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        body: formData,
+      });
+      if (res.ok) {
+        setNewTitle("");
+        setNewBody("");
+        setNewCategory("question");
+        setShowComposer(false);
+        fetchPosts();
+      }
+    } catch { /* ignore */ }
+    setPosting(false);
+  };
 
   return (
     <div className="space-y-6 relative">
@@ -434,18 +399,95 @@ export default function HomePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Discover</h1>
-          <p className="text-sm text-slate-500">See what UW Engineers are building</p>
+          <h1 className="text-2xl font-bold text-slate-900">Community</h1>
+          <p className="text-sm text-slate-500">Ask questions, share news, start discussions</p>
         </div>
         {loggedIn && (
-          <Link
-            href="/post/new"
+          <button
+            onClick={() => setShowComposer(!showComposer)}
             className="bg-[#5D0096] text-white px-5 py-2.5 rounded-xl font-medium text-sm hover:bg-[#865DA4] transition-all flex items-center gap-2"
           >
-            <Plus size={16} />
+            <MessagesSquare size={16} />
             New Post
-          </Link>
+          </button>
         )}
+      </div>
+
+      {/* Composer */}
+      {showComposer && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <div className="flex gap-2">
+            {(["question", "news", "discussion"] as const).map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setNewCategory(cat)}
+                className={`text-sm px-3.5 py-1.5 rounded-full font-medium flex items-center gap-1.5 transition-colors ${
+                  newCategory === cat
+                    ? CATEGORY_COLORS[cat]
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}
+              >
+                {CATEGORY_ICONS[cat]}
+                {CATEGORY_LABELS[cat]}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder={
+              newCategory === "question" ? "What's your question?" :
+              newCategory === "news" ? "What's the news?" :
+              "What do you want to discuss?"
+            }
+            maxLength={100}
+            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none transition-all"
+          />
+          <textarea
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+            placeholder="Share more details..."
+            maxLength={2000}
+            rows={4}
+            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none transition-all resize-none"
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-400">{newBody.length}/2000</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setShowComposer(false); setNewTitle(""); setNewBody(""); }}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePost}
+                disabled={!newTitle.trim() || !newBody.trim() || posting}
+                className="px-5 py-2 rounded-xl bg-[#5D0096] text-white text-sm font-medium hover:bg-[#865DA4] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {posting ? "Posting..." : "Post"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category tabs */}
+      <div className="flex gap-2">
+        {CATEGORY_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setCategoryFilter(tab.key)}
+            className={`text-sm px-4 py-2 rounded-xl font-medium transition-colors ${
+              categoryFilter === tab.key
+                ? "bg-[#5D0096] text-white"
+                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Search bar */}
@@ -455,7 +497,7 @@ export default function HomePage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search posts..."
+          placeholder="Search community posts..."
           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none transition-all"
         />
       </div>
@@ -466,13 +508,13 @@ export default function HomePage() {
       ) : posts.length === 0 ? (
         <div className="text-center py-16">
           <Eye className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">No posts yet</p>
-          <p className="text-sm text-slate-400 mt-1">Be the first to share what you&apos;re building</p>
+          <p className="text-slate-500 font-medium">No community posts yet</p>
+          <p className="text-sm text-slate-400 mt-1">Be the first to start a conversation</p>
         </div>
       ) : (
         <div className="space-y-4">
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} initialLiked={likedIds.has(post.id)} />
+            <CommunityPostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} initialLiked={likedIds.has(post.id)} />
           ))}
         </div>
       )}
