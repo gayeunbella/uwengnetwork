@@ -23,6 +23,20 @@ class ProfessorPublic(BaseModel):
         return v
 
 
+class ProfessorCreate(BaseModel):
+    name: str
+    department: str
+    research_interests: list[str] = []
+    profile_url: str = ""
+
+
+class ProfessorUpdate(BaseModel):
+    name: str | None = None
+    department: str | None = None
+    research_interests: list[str] | None = None
+    profile_url: str | None = None
+
+
 class ProfessorListResponse(BaseModel):
     professors: list[ProfessorPublic]
     total: int

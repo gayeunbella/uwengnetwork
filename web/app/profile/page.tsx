@@ -35,9 +35,9 @@ export default function ProfilePage() {
     return (
       <div className="text-center py-20">
         <User className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-        <p className="text-slate-500 font-medium">Log in to view your profile</p>
+        <p className="text-slate-500 font-medium">Sign in to view your profile</p>
         <Link href="/login" className="text-sm text-[#7E3AF2] font-medium hover:underline mt-2 inline-block">
-          Log In
+          Sign In
         </Link>
       </div>
     );

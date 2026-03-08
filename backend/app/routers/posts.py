@@ -12,11 +12,13 @@ from app.auth import get_current_user, get_optional_user, require_verified
 from app.config import settings
 from app.database import get_db
 from app.models.notification import Notification
-from app.models.post import DevLogPost, PostLike
+from app.models.post import DevLogPost, PostComment, PostLike
 from app.schemas.post import (
     VALID_CATEGORIES,
     VALID_FIELDS,
     VALID_STAGES,
+    CommentCreate,
+    CommentPublic,
     PostAuthorView,
     PostListResponse,
     PostPublic,
@@ -183,6 +185,63 @@ def delete_post(
     db.commit()
 
 
+@router.patch("/{post_id}", response_model=PostPublic)
+def update_post(
+    post_id: str,
+    title: Optional[str] = Form(None),
+    body: Optional[str] = Form(None),
+    project_stage: Optional[str] = Form(None),
+    category: Optional[str] = Form(None),
+    tech_stack: Optional[str] = Form(None),
+    field: Optional[str] = Form(None),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    post = db.query(DevLogPost).filter(DevLogPost.id == post_id).first()
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post.author_id != current_user.id:
+        raise HTTPException(403, "Not authorized")
+
+    if title is not None:
+        if len(title) > 100:
+            raise HTTPException(422, "Title max 100 chars")
+        post.title = title
+    if body is not None:
+        if len(body) > 2000:
+            raise HTTPException(422, "Body max 2000 chars")
+        post.body = body
+    if project_stage is not None:
+        if project_stage not in VALID_STAGES:
+            raise HTTPException(422, f"project_stage must be one of {sorted(VALID_STAGES)}")
+        post.project_stage = project_stage
+    if category is not None:
+        if category not in VALID_CATEGORIES:
+            raise HTTPException(422, f"category must be one of {sorted(VALID_CATEGORIES)}")
+        post.category = category
+    if tech_stack is not None:
+        try:
+            tech_list = json.loads(tech_stack)
+        except json.JSONDecodeError:
+            raise HTTPException(422, "tech_stack must be valid JSON array")
+        if len(tech_list) > 5:
+            raise HTTPException(422, "tech_stack max 5 items")
+        post.tech_stack = json.dumps(tech_list)
+    if field is not None:
+        try:
+            field_list = json.loads(field)
+        except json.JSONDecodeError:
+            raise HTTPException(422, "field must be valid JSON array")
+        for f_val in field_list:
+            if f_val not in VALID_FIELDS:
+                raise HTTPException(422, f"field value '{f_val}' must be one of {sorted(VALID_FIELDS)}")
+        post.field = json.dumps(field_list)
+
+    db.commit()
+    db.refresh(post)
+    return PostPublic.model_validate(post)
+
+
 @router.post("/{post_id}/like")
 def toggle_like(
     post_id: str,
@@ -234,3 +293,54 @@ def get_likes(
         raise HTTPException(403, "Only the author can view likes")
 
     return [UserPublic.model_validate(like.user) for like in post.likes]
+
+
+@router.get("/{post_id}/comments", response_model=list[CommentPublic])
+def get_comments(
+    post_id: str,
+    db: Session = Depends(get_db),
+):
+    post = db.query(DevLogPost).filter(DevLogPost.id == post_id).first()
+    if not post:
+        raise HTTPException(404, "Post not found")
+
+    comments = (
+        db.query(PostComment)
+        .filter(PostComment.post_id == post_id)
+        .order_by(PostComment.created_at.asc())
+        .all()
+    )
+    return [CommentPublic.model_validate(c) for c in comments]
+
+
+@router.post("/{post_id}/comments", response_model=CommentPublic)
+def create_comment(
+    post_id: str,
+    req: CommentCreate,
+    current_user=Depends(require_verified),
+    db: Session = Depends(get_db),
+):
+    post = db.query(DevLogPost).filter(DevLogPost.id == post_id).first()
+    if not post:
+        raise HTTPException(404, "Post not found")
+
+    comment = PostComment(
+        post_id=post_id,
+        user_id=current_user.id,
+        body=req.body,
+    )
+    db.add(comment)
+
+    if post.author_id != current_user.id:
+        notif = Notification(
+            user_id=post.author_id,
+            type="comment",
+            title=f"{current_user.name} commented on your post",
+            body=req.body[:100],
+            reference_id=post_id,
+        )
+        db.add(notif)
+
+    db.commit()
+    db.refresh(comment)
+    return CommentPublic.model_validate(comment)

@@ -2,10 +2,26 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, Plus, Clock, FlaskConical, Users, ThumbsUp, MessageSquare, Share2, Mail, Check, X } from "lucide-react";
 import { isLoggedIn } from "@/lib/auth";
+import { Search, Plus, Eye, Clock, ThumbsUp, MessageSquare, Share2, Mail, Users, FlaskConical, X, Check } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const STAGES: Record<string, string> = {
+  idea: "Idea",
+  early_prototype: "Prototype",
+  working_prototype: "MVP",
+  polished: "Production",
+  shipped: "Shipped",
+};
+
+const STAGE_COLORS: Record<string, string> = {
+  idea: "bg-blue-100 text-blue-700",
+  early_prototype: "bg-amber-100 text-amber-700",
+  working_prototype: "bg-emerald-100 text-emerald-700",
+  polished: "bg-purple-100 text-purple-700",
+  shipped: "bg-green-100 text-green-700",
+};
 
 const DOMAIN_LABELS: Record<string, string> = {
   ai_ml: "AI / ML", healthcare: "Healthcare", sustainability: "Sustainability",
@@ -27,12 +43,20 @@ const DOMAIN_COLORS: Record<string, string> = {
   other: "bg-slate-100 text-slate-600",
 };
 
-const POPULAR_SKILLS = [
-  "Python", "MATLAB", "C++", "R", "TensorFlow", "PyTorch",
-  "ROS", "CAD", "LabVIEW", "Simulink", "Verilog", "FPGA",
+const POPULAR_TECH = [
+  "React", "Next.js", "Python", "TypeScript", "TensorFlow", "PyTorch",
+  "Node.js", "C++", "Rust", "Arduino", "ROS", "Flutter", "Swift", "Go",
 ];
 
-type ResearchPost = {
+const QUICK_FILTERS: { label: string; params: Record<string, string> }[] = [
+  { label: "1st/2nd Year Projects", params: { year: "1,2" } },
+  { label: "ECE + Embedded", params: { department: "Electrical and Computer Engineering", field: "embedded" } },
+  { label: "AI/ML Research", params: { field: "ai_ml", category: "research" } },
+  { label: "Open to Collaborate", params: { looking_for: "collaborators" } },
+  { label: "Prof Lab Projects", params: { prof_lab: "true" } },
+];
+
+type Post = {
   id: string;
   title: string;
   body: string;
@@ -58,19 +82,6 @@ type Comment = {
   created_at: string;
 };
 
-function parseBody(body: string) {
-  const parts = body.split("\n\n---\n");
-  const description = parts[0];
-  const meta: Record<string, string> = {};
-  if (parts[1]) {
-    parts[1].split("\n").forEach((line) => {
-      const idx = line.indexOf(": ");
-      if (idx > -1) meta[line.slice(0, idx)] = line.slice(idx + 2);
-    });
-  }
-  return { description, meta };
-}
-
 function timeAgo(dateStr: string) {
   const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
   const diff = Date.now() - date.getTime();
@@ -85,22 +96,40 @@ function timeAgo(dateStr: string) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function ResearchFilterSidebar({
+function parseBody(body: string) {
+  const parts = body.split("\n\n---\n");
+  const description = parts[0];
+  const meta: Record<string, string> = {};
+  if (parts[1]) {
+    parts[1].split("\n").forEach((line) => {
+      const idx = line.indexOf(": ");
+      if (idx > -1) meta[line.slice(0, idx)] = line.slice(idx + 2);
+    });
+  }
+  return { description, meta };
+}
+
+function FilterSidebar({
+  stageFilter, setStageFilter,
   domainFilter, setDomainFilter,
-  skillFilter, setSkillFilter,
-  paidOnly, setPaidOnly,
-  departmentFilter, setDepartmentFilter,
+  techFilter, setTechFilter,
+  openToCollab, setOpenToCollab,
+  profLabOnly, setProfLabOnly,
+  onQuickFilter,
 }: {
+  stageFilter: string;
+  setStageFilter: (v: string) => void;
   domainFilter: string;
   setDomainFilter: (v: string) => void;
-  skillFilter: string[];
-  setSkillFilter: (v: string[]) => void;
-  paidOnly: boolean;
-  setPaidOnly: (v: boolean) => void;
-  departmentFilter: string;
-  setDepartmentFilter: (v: string) => void;
+  techFilter: string[];
+  setTechFilter: (v: string[]) => void;
+  openToCollab: boolean;
+  setOpenToCollab: (v: boolean) => void;
+  profLabOnly: boolean;
+  setProfLabOnly: (v: boolean) => void;
+  onQuickFilter: (params: Record<string, string>) => void;
 }) {
-  const activeCount = [domainFilter, paidOnly, skillFilter.length > 0, departmentFilter].filter(Boolean).length;
+  const activeCount = [stageFilter, domainFilter, openToCollab, profLabOnly, techFilter.length > 0].filter(Boolean).length;
 
   return (
     <div className="w-60 shrink-0 space-y-5">
@@ -109,10 +138,11 @@ function ResearchFilterSidebar({
           <span className="text-xs font-medium text-slate-500">{activeCount} filter{activeCount > 1 ? "s" : ""} active</span>
           <button
             onClick={() => {
+              setStageFilter("");
               setDomainFilter("");
-              setSkillFilter([]);
-              setPaidOnly(false);
-              setDepartmentFilter("");
+              setTechFilter([]);
+              setOpenToCollab(false);
+              setProfLabOnly(false);
             }}
             className="text-xs text-[#5D0096] font-medium hover:underline"
           >
@@ -122,19 +152,19 @@ function ResearchFilterSidebar({
       )}
 
       <div>
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Department</p>
-        <div className="space-y-1">
-          {DEPARTMENTS.map((dept) => (
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Stage</p>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(STAGES).map(([key, label]) => (
             <button
-              key={dept}
-              onClick={() => setDepartmentFilter(departmentFilter === dept ? "" : dept)}
-              className={`w-full text-left text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-                departmentFilter === dept
-                  ? "bg-purple-50 text-[#5D0096]"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              key={key}
+              onClick={() => setStageFilter(stageFilter === key ? "" : key)}
+              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${
+                stageFilter === key
+                  ? STAGE_COLORS[key]
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
               }`}
             >
-              {dept}
+              {label}
             </button>
           ))}
         </div>
@@ -160,16 +190,16 @@ function ResearchFilterSidebar({
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Skills</p>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Tech Stack</p>
         <div className="flex flex-wrap gap-1.5">
-          {POPULAR_SKILLS.map((skill) => {
-            const active = skillFilter.includes(skill);
+          {POPULAR_TECH.map((tech) => {
+            const active = techFilter.includes(tech);
             return (
               <button
-                key={skill}
+                key={tech}
                 onClick={() =>
-                  setSkillFilter(
-                    active ? skillFilter.filter((s) => s !== skill) : [...skillFilter, skill]
+                  setTechFilter(
+                    active ? techFilter.filter((t) => t !== tech) : [...techFilter, tech]
                   )
                 }
                 className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${
@@ -178,7 +208,7 @@ function ResearchFilterSidebar({
                     : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                 }`}
               >
-                {skill}
+                {tech}
               </button>
             );
           })}
@@ -189,20 +219,48 @@ function ResearchFilterSidebar({
         <label className="flex items-center gap-2.5 cursor-pointer group">
           <input
             type="checkbox"
-            checked={paidOnly}
-            onChange={(e) => setPaidOnly(e.target.checked)}
+            checked={openToCollab}
+            onChange={(e) => setOpenToCollab(e.target.checked)}
             className="w-4 h-4 rounded border-slate-300 text-[#5D0096] focus:ring-purple-200 accent-[#5D0096]"
           />
-          <span className="text-xs font-medium text-slate-600 group-hover:text-slate-900">
-            Paid positions only
+          <span className="text-xs font-medium text-slate-600 group-hover:text-slate-900 flex items-center gap-1.5">
+            <Users size={13} />
+            Open to collaborators
           </span>
         </label>
+        <label className="flex items-center gap-2.5 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={profLabOnly}
+            onChange={(e) => setProfLabOnly(e.target.checked)}
+            className="w-4 h-4 rounded border-slate-300 text-[#5D0096] focus:ring-purple-200 accent-[#5D0096]"
+          />
+          <span className="text-xs font-medium text-slate-600 group-hover:text-slate-900 flex items-center gap-1.5">
+            <FlaskConical size={13} />
+            From prof labs only
+          </span>
+        </label>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Quick Filters</p>
+        <div className="space-y-1">
+          {QUICK_FILTERS.map((qf) => (
+            <button
+              key={qf.label}
+              onClick={() => onQuickFilter(qf.params)}
+              className="w-full text-left text-xs px-3 py-2 rounded-lg text-slate-600 hover:bg-purple-50 hover:text-[#5D0096] transition-colors font-medium"
+            >
+              {qf.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLoginPrompt: (msg: string) => void }) {
+function PostCard({ post, onLoginPrompt }: { post: Post; onLoginPrompt: (msg: string) => void }) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [showComments, setShowComments] = useState(false);
@@ -281,11 +339,6 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
   const { description, meta } = parseBody(post.body);
   const lookingFor = meta["Looking for"];
   const status = meta["Status"];
-  const lab = meta["Lab"];
-  const compensation = meta["Compensation"];
-  const hoursPerWeek = meta["Hours/Week"];
-  const openTo = meta["Open to"];
-  const skills = meta["Required Skills"];
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-all">
@@ -297,15 +350,7 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-slate-900 truncate">{post.author.name}</p>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span>{post.author.department}</span>
-              {lab && (
-                <>
-                  <span>&middot;</span>
-                  <span className="flex items-center gap-1"><FlaskConical size={11} />{lab}</span>
-                </>
-              )}
-            </div>
+            <p className="text-xs text-slate-500">{post.author.department} &middot; Year {post.author.year}</p>
             <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
               <Clock size={11} />
               {timeAgo(post.created_at)}
@@ -337,41 +382,27 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
           <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">{description}</p>
         </div>
 
-        {/* Research details pills */}
+        {/* Tags */}
         <div className="px-5 pb-3 flex flex-wrap gap-1.5">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLORS[post.project_stage] || "bg-slate-100 text-slate-600"}`}>
+            {STAGES[post.project_stage] || post.project_stage}
+          </span>
           {post.field.map((f) => (
             <span key={f} className={`text-xs px-2 py-0.5 rounded-full font-medium ${DOMAIN_COLORS[f] || "bg-slate-100 text-slate-600"}`}>
               {DOMAIN_LABELS[f] || f}
             </span>
           ))}
-          {compensation && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
-              {compensation}
+          {post.tech_stack.slice(0, 4).map((t) => (
+            <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+              {t}
             </span>
-          )}
-          {hoursPerWeek && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-              {hoursPerWeek} hrs/wk
-            </span>
-          )}
-          {openTo && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-medium flex items-center gap-1">
-              <Users size={11} />
-              {openTo}
+          ))}
+          {post.tech_stack.length > 4 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">
+              +{post.tech_stack.length - 4}
             </span>
           )}
         </div>
-
-        {/* Skills */}
-        {skills && (
-          <div className="px-5 pb-3 flex flex-wrap gap-1.5">
-            {skills.split(", ").slice(0, 5).map((s) => (
-              <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
-                {s}
-              </span>
-            ))}
-          </div>
-        )}
 
         {/* Media */}
         {post.media.length > 0 && (
@@ -512,15 +543,16 @@ function ResearchPostCard({ post, onLoginPrompt }: { post: ResearchPost; onLogin
   );
 }
 
-export default function ResearchPage() {
-  const [researchPosts, setResearchPosts] = useState<ResearchPost[]>([]);
+export default function ProjectsPage() {
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState("");
   const [domainFilter, setDomainFilter] = useState("");
-  const [skillFilter, setSkillFilter] = useState<string[]>([]);
-  const [paidOnly, setPaidOnly] = useState(false);
-  const [departmentFilter, setDepartmentFilter] = useState("");
-  const [isProf, setIsProf] = useState(false);
+  const [techFilter, setTechFilter] = useState<string[]>([]);
+  const [openToCollab, setOpenToCollab] = useState(false);
+  const [profLabOnly, setProfLabOnly] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
   const [loginPrompt, setLoginPrompt] = useState<string | null>(null);
 
   const showLoginPrompt = (action: string) => {
@@ -529,45 +561,56 @@ export default function ResearchPage() {
   };
 
   useEffect(() => {
-    if (isLoggedIn()) {
-      const stored = localStorage.getItem("user");
-      if (stored) {
-        const user = JSON.parse(stored);
-        setIsProf(user.is_professor);
-      }
-    }
+    setLoggedIn(isLoggedIn());
+    const handler = () => setLoggedIn(isLoggedIn());
+    window.addEventListener("auth-change", handler);
+    return () => window.removeEventListener("auth-change", handler);
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchPosts = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (stageFilter) params.set("stage", stageFilter);
       if (domainFilter) params.set("field", domainFilter);
-      if (skillFilter.length > 0) params.set("tech", skillFilter.join(","));
-      params.set("category", "both");
+      if (techFilter.length > 0) params.set("tech", techFilter.join(","));
+      if (openToCollab) params.set("looking_for", "collaborators");
+      if (profLabOnly) params.set("prof_lab", "true");
       params.set("page_size", "50");
       const res = await fetch(`${API_URL}/api/posts?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setResearchPosts(data.posts || []);
+        setPosts(data.posts || []);
       }
     } catch {
       // backend may not be running
     } finally {
       setLoading(false);
     }
-  }, [search, domainFilter, skillFilter]);
+  }, [search, stageFilter, domainFilter, techFilter, openToCollab, profLabOnly]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchPosts();
+  }, [fetchPosts]);
+
+  const handleQuickFilter = (params: Record<string, string>) => {
+    setStageFilter("");
+    setTechFilter([]);
+    setOpenToCollab(false);
+    setProfLabOnly(false);
+    if (params.field) setDomainFilter(params.field);
+    else setDomainFilter("");
+    if (params.looking_for === "collaborators") setOpenToCollab(true);
+    if (params.prof_lab === "true") setProfLabOnly(true);
+  };
 
   const activeFilterTags: { label: string; onClear: () => void }[] = [];
+  if (stageFilter) activeFilterTags.push({ label: STAGES[stageFilter], onClear: () => setStageFilter("") });
   if (domainFilter) activeFilterTags.push({ label: DOMAIN_LABELS[domainFilter], onClear: () => setDomainFilter("") });
-  if (departmentFilter) activeFilterTags.push({ label: departmentFilter, onClear: () => setDepartmentFilter("") });
-  skillFilter.forEach((s) => activeFilterTags.push({ label: s, onClear: () => setSkillFilter(skillFilter.filter((x) => x !== s)) }));
-  if (paidOnly) activeFilterTags.push({ label: "Paid only", onClear: () => setPaidOnly(false) });
+  techFilter.forEach((t) => activeFilterTags.push({ label: t, onClear: () => setTechFilter(techFilter.filter((x) => x !== t)) }));
+  if (openToCollab) activeFilterTags.push({ label: "Open to collaborate", onClear: () => setOpenToCollab(false) });
+  if (profLabOnly) activeFilterTags.push({ label: "Prof labs only", onClear: () => setProfLabOnly(false) });
 
   return (
     <div className="space-y-6 relative">
@@ -579,31 +622,35 @@ export default function ResearchPage() {
         </div>
       )}
 
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Research</h1>
-          <p className="text-sm text-slate-500">Find research opportunities and projects</p>
+          <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
+          <p className="text-sm text-slate-500">Browse what UW Engineers are building</p>
         </div>
-        {isProf && (
+        {loggedIn && (
           <Link
-            href="/research/new"
+            href="/post/new"
             className="bg-[#5D0096] text-white px-5 py-2.5 rounded-xl font-medium text-sm hover:bg-[#865DA4] transition-all flex items-center gap-2"
           >
             <Plus size={16} />
-            Post Research Project
+            New Project
           </Link>
         )}
       </div>
 
       {/* Two-column layout */}
       <div className="flex gap-6">
-        <ResearchFilterSidebar
+        <FilterSidebar
+          stageFilter={stageFilter} setStageFilter={setStageFilter}
           domainFilter={domainFilter} setDomainFilter={setDomainFilter}
-          skillFilter={skillFilter} setSkillFilter={setSkillFilter}
-          paidOnly={paidOnly} setPaidOnly={setPaidOnly}
-          departmentFilter={departmentFilter} setDepartmentFilter={setDepartmentFilter}
+          techFilter={techFilter} setTechFilter={setTechFilter}
+          openToCollab={openToCollab} setOpenToCollab={setOpenToCollab}
+          profLabOnly={profLabOnly} setProfLabOnly={setProfLabOnly}
+          onQuickFilter={handleQuickFilter}
         />
 
+        {/* Feed column */}
         <div className="flex-1 min-w-0 space-y-4">
           {/* Search bar */}
           <div className="relative">
@@ -612,7 +659,7 @@ export default function ResearchPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search research projects..."
+              placeholder="Search projects..."
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-[#5D0096] focus:ring-2 focus:ring-purple-100 outline-none transition-all"
             />
           </div>
@@ -636,17 +683,17 @@ export default function ResearchPage() {
 
           {/* Post list */}
           {loading ? (
-            <div className="text-center py-16 text-slate-400">Loading...</div>
-          ) : researchPosts.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">Loading projects...</div>
+          ) : posts.length === 0 ? (
             <div className="text-center py-16">
-              <FlaskConical className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500 font-medium">No research projects yet</p>
-              <p className="text-sm text-slate-400 mt-1">Research opportunities posted by professors will appear here</p>
+              <Eye className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-500 font-medium">No projects yet</p>
+              <p className="text-sm text-slate-400 mt-1">Be the first to share what you&apos;re building</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {researchPosts.map((post) => (
-                <ResearchPostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} />
+              {posts.map((post) => (
+                <PostCard key={post.id} post={post} onLoginPrompt={showLoginPrompt} />
               ))}
             </div>
           )}

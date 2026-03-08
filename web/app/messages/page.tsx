@@ -22,13 +22,17 @@ type ThreadPreview = {
 };
 
 function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const date = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
+  const diff = Date.now() - date.getTime();
+  if (diff < 0) return "now";
   const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
   if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  return `${days}d`;
+  if (days <= 10) return `${days}d`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export default function MessagesPage() {
@@ -58,9 +62,9 @@ export default function MessagesPage() {
     return (
       <div className="text-center py-20">
         <MessageCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-        <p className="text-slate-500 font-medium">Log in to view messages</p>
-        <Link href="/login" className="text-sm text-[#7E3AF2] font-medium hover:underline mt-2 inline-block">
-          Log In
+        <p className="text-slate-500 font-medium">Sign in to view messages</p>
+        <Link href="/login" className="text-sm text-[#5D0096] font-medium hover:underline mt-2 inline-block">
+          Sign In
         </Link>
       </div>
     );
@@ -89,7 +93,7 @@ export default function MessagesPage() {
               href={`/messages/${thread.other_user.id}`}
               className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors"
             >
-              <div className="w-10 h-10 rounded-full bg-purple-100 text-[#7E3AF2] flex items-center justify-center text-sm font-bold flex-shrink-0">
+              <div className="w-10 h-10 rounded-full bg-purple-100 text-[#5D0096] flex items-center justify-center text-sm font-bold flex-shrink-0">
                 {thread.other_user.name.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
@@ -100,7 +104,7 @@ export default function MessagesPage() {
                 <p className="text-xs text-slate-500 truncate">{thread.last_message.body}</p>
               </div>
               {thread.unread_count > 0 && (
-                <span className="w-5 h-5 rounded-full bg-[#7E3AF2] text-white text-xs flex items-center justify-center flex-shrink-0">
+                <span className="w-5 h-5 rounded-full bg-[#5D0096] text-white text-xs flex items-center justify-center flex-shrink-0">
                   {thread.unread_count}
                 </span>
               )}
