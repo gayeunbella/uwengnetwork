@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     WATCARD_VERIFICATION_ENABLED: bool = False
     VISION_API_KEY: str = ""
     VISION_API_PROVIDER: str = "claude"
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://uwengnetwork.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://uwengnetwork.vercel.app,https://uwengnetwork-jet.vercel.app"
     UPLOAD_DIR: str = "./uploads"
 
     class Config:
